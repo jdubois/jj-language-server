@@ -212,4 +212,114 @@ public class App {
             expect(unreachable).toHaveLength(0);
         });
     });
+
+    describe('access control violations', () => {
+        it('should flag access to private field from another class', () => {
+            const code = `class A {
+    private int x;
+}
+class B {
+    void test() {
+        A a = new A();
+        a.x = 5;
+    }
+}`;
+            const diags = getDiagnostics(code);
+            const access = diags.filter(d => d.code === 'access-control');
+            expect(access.length).toBeGreaterThanOrEqual(1);
+            expect(access[0].message).toContain('private');
+            expect(access[0].message).toContain('x');
+            expect(access[0].message).toContain('A');
+        });
+
+        it('should not flag access to public members', () => {
+            const code = `class A {
+    public int x;
+}
+class B {
+    void test() {
+        A a = new A();
+        a.x = 5;
+    }
+}`;
+            const diags = getDiagnostics(code);
+            const access = diags.filter(d => d.code === 'access-control');
+            expect(access).toHaveLength(0);
+        });
+
+        it('should not flag private access within the same class', () => {
+            const code = `class A {
+    private int x;
+    void test(A other) {
+        other.x = 5;
+    }
+}`;
+            const diags = getDiagnostics(code);
+            const access = diags.filter(d => d.code === 'access-control');
+            expect(access).toHaveLength(0);
+        });
+    });
+
+    describe('deprecated usage', () => {
+        it('should warn when calling a deprecated method', () => {
+            const code = `public class App {
+    @Deprecated
+    public void oldMethod() {}
+
+    public void newMethod() {
+        oldMethod();
+    }
+}`;
+            const diags = getDiagnostics(code);
+            const deprecated = diags.filter(d => d.code === 'deprecated-usage');
+            expect(deprecated.length).toBeGreaterThanOrEqual(1);
+            expect(deprecated[0].message).toContain('oldMethod');
+            expect(deprecated[0].message).toContain('deprecated');
+            expect(deprecated[0].severity).toBe(2); // Warning
+            expect(deprecated[0].tags).toContain(2); // DiagnosticTag.Deprecated
+        });
+
+        it('should not flag non-deprecated methods', () => {
+            const code = `public class App {
+    public void activeMethod() {}
+
+    public void caller() {
+        activeMethod();
+    }
+}`;
+            const diags = getDiagnostics(code);
+            const deprecated = diags.filter(d => d.code === 'deprecated-usage');
+            expect(deprecated).toHaveLength(0);
+        });
+    });
+
+    describe('missing @Override', () => {
+        it('should hint when overriding method without @Override', () => {
+            const code = `class Animal {
+    public void speak() {}
+}
+class Dog extends Animal {
+    public void speak() {}
+}`;
+            const diags = getDiagnostics(code);
+            const missing = diags.filter(d => d.code === 'missing-override');
+            expect(missing.length).toBeGreaterThanOrEqual(1);
+            expect(missing[0].message).toContain('speak');
+            expect(missing[0].message).toContain('Animal');
+            expect(missing[0].severity).toBe(4); // Hint
+        });
+
+        it('should not flag when @Override is present', () => {
+            const code = `class Animal {
+    public void speak() {}
+}
+class Dog extends Animal {
+    @Override
+    public void speak() {}
+}`;
+            const diags = getDiagnostics(code);
+            const missing = diags.filter(d => d.code === 'missing-override');
+            expect(missing).toHaveLength(0);
+        });
+    });
 });

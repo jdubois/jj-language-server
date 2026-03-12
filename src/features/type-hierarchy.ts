@@ -8,10 +8,13 @@
 
 import lsp from 'vscode-languageserver';
 import type { SymbolTable, JavaSymbol } from '../java/symbol-table.js';
+import type { WorkspaceIndex } from '../project/workspace-index.js';
 
 /**
  * Provide type hierarchy (supertypes and subtypes).
  */
+
+const TYPE_KINDS = ['class', 'interface', 'enum', 'record'];
 
 export function prepareTypeHierarchy(
     table: SymbolTable,
@@ -21,7 +24,7 @@ export function prepareTypeHierarchy(
 ): lsp.TypeHierarchyItem[] | null {
     // Find the type at the cursor position
     const sym = table.allSymbols.find(s =>
-        ['class', 'interface', 'enum', 'record'].includes(s.kind) &&
+        TYPE_KINDS.includes(s.kind) &&
         s.line <= line && s.endLine >= line,
     );
 
@@ -41,22 +44,29 @@ export function provideSupertypes(
     table: SymbolTable,
     uri: string,
     item: lsp.TypeHierarchyItem,
+    workspaceIndex?: WorkspaceIndex,
 ): lsp.TypeHierarchyItem[] {
-    // Find the type declaration
     const sym = table.allSymbols.find(s =>
-        s.name === item.name && ['class', 'interface', 'enum', 'record'].includes(s.kind),
+        s.name === item.name && TYPE_KINDS.includes(s.kind),
     );
 
     if (!sym) return [];
 
     const supertypes: lsp.TypeHierarchyItem[] = [];
+    const supertypeNames: string[] = [];
 
-    // Look for "extends" info in modifiers or symbol metadata
-    // For now, we can check other types in the same file
-    for (const other of table.allSymbols) {
-        if (!['class', 'interface'].includes(other.kind)) continue;
-        if (other.name === sym.name) continue;
-        // This is a simplified implementation — a full one would parse extends/implements
+    if (sym.superclass) {
+        supertypeNames.push(sym.superclass);
+    }
+    if (sym.interfaces) {
+        supertypeNames.push(...sym.interfaces);
+    }
+
+    for (const name of supertypeNames) {
+        const resolved = resolveType(name, table, uri, workspaceIndex);
+        if (resolved) {
+            supertypes.push(resolved);
+        }
     }
 
     return supertypes;
@@ -66,13 +76,88 @@ export function provideSubtypes(
     table: SymbolTable,
     uri: string,
     item: lsp.TypeHierarchyItem,
+    workspaceIndex?: WorkspaceIndex,
 ): lsp.TypeHierarchyItem[] {
     const subtypes: lsp.TypeHierarchyItem[] = [];
+    const seen = new Set<string>();
 
-    // Check for types that reference the target type (simplified)
-    // A full implementation would track extends/implements relationships
+    collectSubtypes(table, uri, item.name, subtypes, seen);
+
+    if (workspaceIndex) {
+        for (const fileUri of workspaceIndex.getFileUris()) {
+            if (fileUri === uri) continue;
+            const fileTable = workspaceIndex.getSymbolTable(fileUri);
+            if (!fileTable) continue;
+            collectSubtypes(fileTable, fileUri, item.name, subtypes, seen);
+        }
+    }
 
     return subtypes;
+}
+
+function collectSubtypes(
+    table: SymbolTable,
+    tableUri: string,
+    targetName: string,
+    results: lsp.TypeHierarchyItem[],
+    seen: Set<string>,
+): void {
+    for (const sym of table.allSymbols) {
+        if (!TYPE_KINDS.includes(sym.kind)) continue;
+        if (seen.has(`${tableUri}#${sym.name}`)) continue;
+
+        const isSubtype =
+            sym.superclass === targetName ||
+            sym.interfaces?.includes(targetName);
+
+        if (isSubtype) {
+            seen.add(`${tableUri}#${sym.name}`);
+            results.push(symbolToHierarchyItem(sym, tableUri));
+        }
+    }
+}
+
+function resolveType(
+    name: string,
+    table: SymbolTable,
+    uri: string,
+    workspaceIndex?: WorkspaceIndex,
+): lsp.TypeHierarchyItem | undefined {
+    // Search current file first
+    const local = table.allSymbols.find(s =>
+        TYPE_KINDS.includes(s.kind) && s.name === name,
+    );
+    if (local) {
+        return symbolToHierarchyItem(local, uri);
+    }
+
+    // Search workspace index
+    if (workspaceIndex) {
+        const entry = workspaceIndex.findTypeByName(name);
+        if (entry) {
+            return {
+                name: entry.name,
+                kind: typeKindToSymbolKind(entry.kind),
+                uri: entry.uri,
+                range: lsp.Range.create(entry.line, entry.column, entry.line, entry.column + entry.name.length),
+                selectionRange: lsp.Range.create(entry.line, entry.column, entry.line, entry.column + entry.name.length),
+                detail: entry.containerName,
+            };
+        }
+    }
+
+    return undefined;
+}
+
+function symbolToHierarchyItem(sym: JavaSymbol, uri: string): lsp.TypeHierarchyItem {
+    return {
+        name: sym.name,
+        kind: typeKindToSymbolKind(sym.kind),
+        uri,
+        range: lsp.Range.create(sym.line, sym.column, sym.endLine, sym.endColumn),
+        selectionRange: lsp.Range.create(sym.line, sym.column, sym.line, sym.column + sym.name.length),
+        detail: sym.parent,
+    };
 }
 
 function typeKindToSymbolKind(kind: string): lsp.SymbolKind {

@@ -364,7 +364,11 @@ function extractLocalVariables(body: CstNode, parentSym: JavaSymbol): void {
         const localVar = getChild(localVarDecl, 'localVariableDeclaration');
         if (!localVar) return;
 
-        const type = extractUnannTypeText(localVar) ?? extractLocalVarType(localVar);
+        // localVariableDeclaration → localVariableType → unannType
+        const localVarType = getChild(localVar, 'localVariableType');
+        const type = (localVarType ? extractUnannTypeText(localVarType) : undefined)
+            ?? extractUnannTypeText(localVar)
+            ?? extractLocalVarType(localVar);
         const varDeclList = getChild(localVar, 'variableDeclaratorList');
         if (!varDeclList) return;
 
@@ -422,8 +426,14 @@ function extractTypeText(node: CstNode, key: string): string | undefined {
 
 function extractUnannTypeText(node: CstNode): string | undefined {
     const unannType = getChild(node, 'unannType');
-    if (!unannType) return undefined;
-    return collectText(unannType);
+    if (unannType) return collectText(unannType);
+    // For local variables, the type is nested under localVariableType
+    const lvType = getChild(node, 'localVariableType');
+    if (lvType) {
+        const inner = getChild(lvType, 'unannType');
+        if (inner) return collectText(inner);
+    }
+    return undefined;
 }
 
 function collectText(node: CstNode): string {

@@ -10,6 +10,7 @@ import lsp from 'vscode-languageserver';
 import type { SymbolTable } from '../java/symbol-table.js';
 import { findVisibleSymbols } from '../java/scope-resolver.js';
 import { getAllJdkTypes, type JdkType } from '../project/jdk-model.js';
+import { formatJavadocMarkdown, type JavadocComment } from '../java/javadoc.js';
 
 const JAVA_KEYWORDS = [
     'abstract', 'assert', 'boolean', 'break', 'byte', 'case', 'catch', 'char',
@@ -115,6 +116,7 @@ export function provideCompletions(
     line: number,
     character: number,
     text?: string,
+    javadocMap?: Map<number, JavadocComment>,
 ): lsp.CompletionItem[] {
     const items: lsp.CompletionItem[] = [];
 
@@ -136,6 +138,14 @@ export function provideCompletions(
             detail: formatSymbolDetail(sym),
             sortText: getSortPrefix(sym.kind) + sym.name,
         };
+
+        if (javadocMap) {
+            const javadoc = javadocMap.get(sym.line + 1);
+            if (javadoc) {
+                item.documentation = { kind: lsp.MarkupKind.Markdown, value: formatJavadocMarkdown(javadoc) };
+            }
+        }
+
         items.push(item);
     }
 

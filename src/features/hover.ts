@@ -12,6 +12,7 @@ import { findSymbolAtPosition, resolveSymbolByName } from '../java/scope-resolve
 import { getTokenAtPosition } from './token-utils.js';
 import { getJdkType } from '../project/jdk-model.js';
 import type { CstNode } from 'chevrotain';
+import { findJavadocComments, formatJavadocMarkdown, type JavadocComment } from '../java/javadoc.js';
 
 /**
  * Provide hover information for a symbol at the given position.
@@ -44,7 +45,9 @@ export function provideHover(
     const range = lsp.Range.create(startLine, startCol, endLine, endCol);
 
     if (sym) {
-        return { contents: formatSymbolHover(sym), range };
+        const javadocMap = findJavadocComments(cst);
+        const javadoc = javadocMap.get(sym.line + 1);
+        return { contents: formatSymbolHover(sym, javadoc), range };
     }
 
     // Try JDK types
@@ -67,7 +70,7 @@ export function provideHover(
     return null;
 }
 
-function formatSymbolHover(sym: JavaSymbol): lsp.MarkupContent {
+function formatSymbolHover(sym: JavaSymbol, javadoc?: JavadocComment): lsp.MarkupContent {
     const lines: string[] = [];
 
     switch (sym.kind) {
@@ -108,8 +111,11 @@ function formatSymbolHover(sym: JavaSymbol): lsp.MarkupContent {
         lines.push(`\nDefined in: ${sym.parent}`);
     }
 
+    const baseValue = '```java\n' + lines[0] + '\n```' + (lines.length > 1 ? '\n' + lines.slice(1).join('\n') : '');
+    const javadocSection = javadoc ? '\n\n---\n\n' + formatJavadocMarkdown(javadoc) : '';
+
     return {
         kind: lsp.MarkupKind.Markdown,
-        value: '```java\n' + lines[0] + '\n```' + (lines.length > 1 ? '\n' + lines.slice(1).join('\n') : ''),
+        value: baseValue + javadocSection,
     };
 }

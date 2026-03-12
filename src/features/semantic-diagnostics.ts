@@ -45,6 +45,10 @@ export function computeSemanticDiagnostics(
     diagnostics.push(...checkUnusedImports(cst, text));
     diagnostics.push(...checkMissingReturn(cst, table));
     diagnostics.push(...checkUnreachableCode(cst));
+    diagnostics.push(...checkAccessControlViolations(table, text));
+    diagnostics.push(...checkDeprecatedUsage(table, cst, text));
+    diagnostics.push(...checkUnresolvedReferences(table, text));
+    diagnostics.push(...checkMissingOverrideAnnotation(table, text));
 
     return diagnostics.map(d => ({ ...d, source: 'jj-language-server' }));
 }
@@ -353,6 +357,279 @@ function isTerminatingStatement(node: CstNode): boolean {
         }
     }
     return false;
+}
+
+// --- Access Control Violations ---
+
+function checkAccessControlViolations(table: SymbolTable, text: string): lsp.Diagnostic[] {
+    const diagnostics: lsp.Diagnostic[] = [];
+
+    // Build map of className → {memberName → visibility info}
+    const classMemberMap = new Map<string, Map<string, { modifiers: string[]; kind: string }>>();
+    for (const sym of table.symbols) {
+        if (!['class', 'interface', 'enum', 'record'].includes(sym.kind)) continue;
+        const memberMap = new Map<string, { modifiers: string[]; kind: string }>();
+        for (const child of sym.children) {
+            if (child.kind === 'field' || child.kind === 'method') {
+                memberMap.set(child.name, { modifiers: child.modifiers, kind: child.kind });
+            }
+        }
+        classMemberMap.set(sym.name, memberMap);
+    }
+
+    const lines = text.split('\n');
+    const dotAccessRegex = /\b([a-z][a-zA-Z0-9]*)\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\b/g;
+
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+        const line = lines[lineIdx];
+        let match;
+        dotAccessRegex.lastIndex = 0;
+        while ((match = dotAccessRegex.exec(line)) !== null) {
+            const varName = match[1];
+            const memberName = match[2];
+            if (varName === 'this' || varName === 'super') continue;
+
+            const enclosingClass = findEnclosingClassAtLine(table, lineIdx);
+            if (!enclosingClass) continue;
+
+            for (const [className, members] of classMemberMap) {
+                if (className === enclosingClass) continue;
+                const memberInfo = members.get(memberName);
+                if (!memberInfo) continue;
+
+                const memberCol = match.index + match[0].length - match[2].length;
+
+                if (memberInfo.modifiers.includes('private')) {
+                    diagnostics.push(lsp.Diagnostic.create(
+                        lsp.Range.create(lineIdx, memberCol, lineIdx, memberCol + memberName.length),
+                        `Cannot access private member '${memberName}' of class '${className}'`,
+                        lsp.DiagnosticSeverity.Error,
+                        'access-control',
+                        'jj-language-server',
+                    ));
+                } else if (memberInfo.modifiers.includes('protected')) {
+                    const enclosingSym = table.allSymbols.find(s =>
+                        s.name === enclosingClass && ['class', 'interface', 'enum', 'record'].includes(s.kind));
+                    const isSubclass = enclosingSym?.superclass === className;
+                    if (!isSubclass) {
+                        diagnostics.push(lsp.Diagnostic.create(
+                            lsp.Range.create(lineIdx, memberCol, lineIdx, memberCol + memberName.length),
+                            `Cannot access protected member '${memberName}' of class '${className}'`,
+                            lsp.DiagnosticSeverity.Error,
+                            'access-control',
+                            'jj-language-server',
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    return diagnostics;
+}
+
+function findEnclosingClassAtLine(table: SymbolTable, line: number): string | undefined {
+    for (const sym of table.symbols) {
+        if (!['class', 'interface', 'enum', 'record'].includes(sym.kind)) continue;
+        if (line >= sym.line && line <= sym.endLine) {
+            // Check nested classes first
+            for (const child of sym.children) {
+                if (['class', 'interface', 'enum', 'record'].includes(child.kind)) {
+                    if (line >= child.line && line <= child.endLine) {
+                        return child.name;
+                    }
+                }
+            }
+            return sym.name;
+        }
+    }
+    return undefined;
+}
+
+// --- Deprecated API Warning ---
+
+function checkDeprecatedUsage(table: SymbolTable, cst: CstNode, text: string): lsp.Diagnostic[] {
+    const diagnostics: lsp.Diagnostic[] = [];
+    const lines = text.split('\n');
+
+    // Find deprecated symbols by scanning for @Deprecated before declarations
+    const deprecatedSymbols: JavaSymbol[] = [];
+    const deprecatedNames = new Set<string>();
+
+    for (const sym of table.allSymbols) {
+        if (!['method', 'field', 'class', 'interface', 'enum', 'record'].includes(sym.kind)) continue;
+        for (let i = Math.max(0, sym.line - 5); i <= sym.line; i++) {
+            if (lines[i]?.includes('@Deprecated')) {
+                deprecatedSymbols.push(sym);
+                deprecatedNames.add(sym.name);
+                break;
+            }
+        }
+    }
+
+    if (deprecatedNames.size === 0) return diagnostics;
+
+    // Collect all identifier tokens (excluding imports)
+    const tokens = collectIdentifierTokens(cst);
+    const reported = new Set<string>();
+
+    for (const token of tokens) {
+        if (!deprecatedNames.has(token.image)) continue;
+
+        const tokenLine = (token.startLine ?? 1) - 1;
+        const tokenCol = (token.startColumn ?? 1) - 1;
+
+        // Skip the declaration itself
+        const isDecl = deprecatedSymbols.some(s => s.line === tokenLine && s.column === tokenCol);
+        if (isDecl) continue;
+
+        // Skip tokens on lines containing @Deprecated (the annotation itself)
+        if (lines[tokenLine]?.includes('@Deprecated')) continue;
+
+        const key = `${token.image}:${tokenLine}:${tokenCol}`;
+        if (reported.has(key)) continue;
+        reported.add(key);
+
+        diagnostics.push({
+            range: tokenToRange(token),
+            message: `'${token.image}' is deprecated`,
+            severity: lsp.DiagnosticSeverity.Warning,
+            code: 'deprecated-usage',
+            source: 'jj-language-server',
+            tags: [lsp.DiagnosticTag.Deprecated],
+        });
+    }
+
+    return diagnostics;
+}
+
+function collectIdentifierTokens(node: CstNode): IToken[] {
+    const tokens: IToken[] = [];
+    collectIdentifierTokensRecursive(node, tokens);
+    return tokens;
+}
+
+function collectIdentifierTokensRecursive(node: CstNode, tokens: IToken[]): void {
+    if (node.name === 'importDeclaration') return;
+
+    for (const children of Object.values(node.children)) {
+        if (!children) continue;
+        for (const child of children as CstElement[]) {
+            if (isCstNode(child)) {
+                collectIdentifierTokensRecursive(child, tokens);
+            } else {
+                const token = child as IToken;
+                if (token.tokenType?.name === 'Identifier') {
+                    tokens.push(token);
+                }
+            }
+        }
+    }
+}
+
+// --- Unresolved Method/Field References (this.xxx) ---
+
+function checkUnresolvedReferences(table: SymbolTable, text: string): lsp.Diagnostic[] {
+    const diagnostics: lsp.Diagnostic[] = [];
+    const lines = text.split('\n');
+    const thisCallRegex = /\bthis\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g;
+
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+        const line = lines[lineIdx];
+        let match;
+        thisCallRegex.lastIndex = 0;
+        while ((match = thisCallRegex.exec(line)) !== null) {
+            const methodName = match[1];
+
+            const enclosingClassName = findEnclosingClassAtLine(table, lineIdx);
+            if (!enclosingClassName) continue;
+
+            const classSym = table.allSymbols.find(s =>
+                s.name === enclosingClassName && ['class', 'interface', 'enum', 'record'].includes(s.kind));
+            if (!classSym) continue;
+
+            // Check direct members
+            let found = classSym.children.some(c =>
+                c.name === methodName && (c.kind === 'method' || c.kind === 'constructor'));
+
+            // Check inherited methods from superclass in the same file
+            if (!found && classSym.superclass) {
+                const superSym = table.allSymbols.find(s =>
+                    s.name === classSym.superclass && ['class', 'interface'].includes(s.kind));
+                if (superSym) {
+                    found = superSym.children.some(c => c.name === methodName && c.kind === 'method');
+                } else {
+                    // Superclass is not in this file — assume the method exists
+                    // to avoid false positives (we can't verify without cross-file resolution)
+                    found = true;
+                }
+            }
+
+            if (!found) {
+                const methodCol = match.index + match[0].indexOf(methodName);
+                diagnostics.push(lsp.Diagnostic.create(
+                    lsp.Range.create(lineIdx, methodCol, lineIdx, methodCol + methodName.length),
+                    `Cannot resolve method '${methodName}'`,
+                    lsp.DiagnosticSeverity.Error,
+                    'unresolved-method',
+                    'jj-language-server',
+                ));
+            }
+        }
+    }
+
+    return diagnostics;
+}
+
+// --- Missing Override Annotation ---
+
+function checkMissingOverrideAnnotation(table: SymbolTable, text: string): lsp.Diagnostic[] {
+    const diagnostics: lsp.Diagnostic[] = [];
+    const lines = text.split('\n');
+
+    // Build map of className → methods with param counts
+    const classMethodMap = new Map<string, { name: string; paramCount: number }[]>();
+    for (const sym of table.symbols) {
+        if (sym.kind !== 'class') continue;
+        classMethodMap.set(sym.name, sym.children
+            .filter(c => c.kind === 'method')
+            .map(m => ({ name: m.name, paramCount: m.parameters?.length ?? 0 })));
+    }
+
+    for (const sym of table.symbols) {
+        if (sym.kind !== 'class' || !sym.superclass) continue;
+        const superMethods = classMethodMap.get(sym.superclass);
+        if (!superMethods) continue;
+
+        for (const child of sym.children) {
+            if (child.kind !== 'method') continue;
+            const paramCount = child.parameters?.length ?? 0;
+            const matchesSuper = superMethods.some(m =>
+                m.name === child.name && m.paramCount === paramCount);
+            if (!matchesSuper) continue;
+
+            // Check if @Override is present before this method
+            let hasOverride = false;
+            for (let i = Math.max(0, child.line - 5); i <= child.line; i++) {
+                if (lines[i]?.includes('@Override')) {
+                    hasOverride = true;
+                    break;
+                }
+            }
+
+            if (!hasOverride) {
+                diagnostics.push(lsp.Diagnostic.create(
+                    lsp.Range.create(child.line, child.column, child.line, child.column + child.name.length),
+                    `Method '${child.name}' overrides a method in '${sym.superclass}' but is not annotated with @Override`,
+                    lsp.DiagnosticSeverity.Hint,
+                    'missing-override',
+                    'jj-language-server',
+                ));
+            }
+        }
+    }
+
+    return diagnostics;
 }
 
 // --- Shared Helpers ---

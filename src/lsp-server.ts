@@ -33,6 +33,33 @@ import { prepareTypeHierarchy, provideSupertypes, provideSubtypes } from './feat
 import { provideCodeLens } from './features/code-lens.js';
 import { provideOnTypeFormatting } from './features/on-type-formatting.js';
 import { WorkspaceIndex } from './project/workspace-index.js';
+import { findJavadocComments } from './java/javadoc.js';
+
+export interface JjLanguageServerSettings {
+    java: {
+        home?: string;
+        version?: string;
+    };
+    formatting: {
+        enabled: boolean;
+        tabSize: number;
+        insertSpaces: boolean;
+    };
+    diagnostics: {
+        enabled: boolean;
+        semanticEnabled: boolean;
+    };
+    completion: {
+        autoImport: boolean;
+    };
+}
+
+const DEFAULT_SETTINGS: JjLanguageServerSettings = {
+    java: {},
+    formatting: { enabled: true, tabSize: 4, insertSpaces: true },
+    diagnostics: { enabled: true, semanticEnabled: true },
+    completion: { autoImport: true },
+};
 
 export interface LspServerOptions {
     logger: Logger;
@@ -46,6 +73,7 @@ export class LspServer {
     private parseResults: Map<string, ParseResult> = new Map();
     private symbolTables: Map<string, SymbolTable> = new Map();
     private workspaceIndex: WorkspaceIndex;
+    private settings: JjLanguageServerSettings = { ...DEFAULT_SETTINGS };
 
     constructor(options: LspServerOptions) {
         this.logger = options.logger;
@@ -106,6 +134,11 @@ export class LspServer {
                     full: true,
                     range: true,
                 },
+                workspace: {
+                    workspaceFolders: {
+                        supported: true,
+                    },
+                },
             },
         };
     }
@@ -159,6 +192,41 @@ export class LspServer {
         // No-op for now
     }
 
+    didChangeWatchedFiles(params: lsp.DidChangeWatchedFilesParams): void {
+        for (const change of params.changes) {
+            const uri = change.uri;
+            if (!uri.endsWith('.java')) continue;
+
+            switch (change.type) {
+                case lsp.FileChangeType.Created:
+                case lsp.FileChangeType.Changed:
+                    // Re-index the file
+                    this.reindexFile(uri);
+                    break;
+                case lsp.FileChangeType.Deleted:
+                    // Remove from index
+                    this.workspaceIndex.removeFile(uri);
+                    this.documents.delete(uri);
+                    this.parseResults.delete(uri);
+                    this.symbolTables.delete(uri);
+                    break;
+            }
+        }
+    }
+
+    didChangeConfiguration(params: lsp.DidChangeConfigurationParams): void {
+        const s = params.settings?.jjLanguageServer;
+        if (s) {
+            this.settings = {
+                java: { ...DEFAULT_SETTINGS.java, ...s.java },
+                formatting: { ...DEFAULT_SETTINGS.formatting, ...s.formatting },
+                diagnostics: { ...DEFAULT_SETTINGS.diagnostics, ...s.diagnostics },
+                completion: { ...DEFAULT_SETTINGS.completion, ...s.completion },
+            };
+            this.logger.info('Configuration updated');
+        }
+    }
+
     // --- Features (stubs for future phases) ---
 
     documentSymbol(params: lsp.DocumentSymbolParams): lsp.DocumentSymbol[] | null {
@@ -168,18 +236,21 @@ export class LspServer {
     }
 
     async documentFormatting(params: lsp.DocumentFormattingParams): Promise<lsp.TextEdit[] | null> {
+        if (!this.settings.formatting.enabled) return null;
         const document = this.documents.get(params.textDocument.uri);
         if (!document) return null;
         return formatDocument(document, params.options);
     }
 
     async documentRangeFormatting(params: lsp.DocumentRangeFormattingParams): Promise<lsp.TextEdit[] | null> {
+        if (!this.settings.formatting.enabled) return null;
         const document = this.documents.get(params.textDocument.uri);
         if (!document) return null;
         return formatRange(document, params.range, params.options);
     }
 
     onTypeFormatting(params: lsp.DocumentOnTypeFormattingParams): lsp.TextEdit[] | null {
+        if (!this.settings.formatting.enabled) return null;
         const doc = this.documents.get(params.textDocument.uri);
         if (!doc) return null;
         return provideOnTypeFormatting(doc.getText(), params.position, params.ch, params.options);
@@ -206,7 +277,9 @@ export class LspServer {
         if (!table) return null;
         const doc = this.documents.get(params.textDocument.uri);
         const text = doc?.getText();
-        return provideCompletions(table, params.position.line, params.position.character, text);
+        const result = this.parseResults.get(params.textDocument.uri);
+        const javadocMap = result?.cst ? findJavadocComments(result.cst) : undefined;
+        return provideCompletions(table, params.position.line, params.position.character, text, javadocMap);
     }
 
     completionResolve(item: lsp.CompletionItem): lsp.CompletionItem {
@@ -449,14 +522,14 @@ export class LspServer {
         const uri = params.item.uri;
         const table = this.symbolTables.get(uri);
         if (!table) return [];
-        return provideSupertypes(table, uri, params.item);
+        return provideSupertypes(table, uri, params.item, this.workspaceIndex);
     }
 
     typeHierarchySubtypes(params: lsp.TypeHierarchySubtypesParams): lsp.TypeHierarchyItem[] {
         const uri = params.item.uri;
         const table = this.symbolTables.get(uri);
         if (!table) return [];
-        return provideSubtypes(table, uri, params.item);
+        return provideSubtypes(table, uri, params.item, this.workspaceIndex);
     }
 
     codeLens(params: lsp.CodeLensParams): lsp.CodeLens[] {
@@ -469,6 +542,24 @@ export class LspServer {
     }
 
     // --- Internal ---
+
+    private async reindexFile(uri: string): Promise<void> {
+        try {
+            const { readFile } = await import('node:fs/promises');
+            const { URI } = await import('vscode-uri');
+            const filePath = URI.parse(uri).fsPath;
+            const text = await readFile(filePath, 'utf-8');
+            const result = parseJava(text);
+            if (result.cst) {
+                this.parseResults.set(uri, result);
+                const table = buildSymbolTable(result.cst);
+                this.symbolTables.set(uri, table);
+                this.workspaceIndex.updateFile(uri, result, table);
+            }
+        } catch (e) {
+            this.logger.warn(`Failed to reindex ${uri}: ${e}`);
+        }
+    }
 
     private parseAndPublishDiagnostics(uri: string, text: string): void {
         const result = parseJava(text);
@@ -486,15 +577,19 @@ export class LspServer {
 
         // Run semantic checks if we have a valid CST and symbol table
         let semanticDiagnostics: ReturnType<typeof computeSemanticDiagnostics> = [];
-        if (result.cst && result.errors.length === 0) {
+        if (this.settings.diagnostics.semanticEnabled && result.cst && result.errors.length === 0) {
             const table = this.symbolTables.get(uri);
             if (table) {
                 semanticDiagnostics = computeSemanticDiagnostics(result.cst, table, text);
             }
         }
 
-        const diagnostics = [...parseDiagnostics, ...semanticDiagnostics];
-        this.lspClient.publishDiagnostics({ uri, diagnostics });
+        if (!this.settings.diagnostics.enabled) {
+            this.lspClient.publishDiagnostics({ uri, diagnostics: [] });
+        } else {
+            const diagnostics = [...parseDiagnostics, ...semanticDiagnostics];
+            this.lspClient.publishDiagnostics({ uri, diagnostics });
+        }
 
         if (result.errors.length > 0) {
             this.logger.log(`Parsed ${uri}: ${result.errors.length} error(s)`);

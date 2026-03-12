@@ -29,6 +29,8 @@ export function createLspConnection(options: LspConnectionOptions): lsp.Connecti
     connection.onDidChangeTextDocument(server.didChangeTextDocument.bind(server));
     connection.onDidCloseTextDocument(server.didCloseTextDocument.bind(server));
     connection.onDidSaveTextDocument(server.didSaveTextDocument.bind(server));
+    connection.onDidChangeWatchedFiles(server.didChangeWatchedFiles.bind(server));
+    connection.onDidChangeConfiguration(server.didChangeConfiguration.bind(server));
 
     connection.onDocumentSymbol(server.documentSymbol.bind(server));
     connection.onDocumentFormatting(server.documentFormatting.bind(server));
