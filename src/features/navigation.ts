@@ -8,9 +8,21 @@
 
 import lsp from 'vscode-languageserver';
 import type { CstNode } from 'chevrotain';
-import type { SymbolTable } from '../java/symbol-table.js';
+import type { SymbolTable, JavaSymbol } from '../java/symbol-table.js';
 import { resolveSymbolByName, findSymbolsByName } from '../java/scope-resolver.js';
 import { getTokenAtPosition } from './token-utils.js';
+
+/**
+ * Find a symbol in the table whose range encompasses the given 0-based position.
+ */
+function findSymbolAtPosition(table: SymbolTable, line: number, character: number): JavaSymbol | undefined {
+    return table.allSymbols.find(s =>
+        s.line === line && s.column <= character && s.endLine >= line && s.endColumn >= character
+        || (s.line < line && s.endLine > line)
+        || (s.line === line && s.column <= character && s.endLine > line)
+        || (s.endLine === line && s.endColumn >= character && s.line < line)
+    );
+}
 
 /**
  * Go to definition: find the declaration of the symbol under the cursor.
@@ -51,8 +63,14 @@ export function provideReferences(
         name = searchName;
     } else {
         const token = getTokenAtPosition(cst, line, character);
-        if (!token) return [];
-        name = token.image;
+        if (token && token.tokenType?.name === 'Identifier') {
+            name = token.image;
+        } else {
+            // Token is a keyword/modifier or not found — try symbol table
+            const sym = findSymbolAtPosition(table, line, character);
+            if (!sym) return [];
+            name = sym.name;
+        }
     }
 
     const locations: lsp.Location[] = [];
@@ -174,6 +192,132 @@ export function providePrepareRename(
 
 import type { CstElement, IToken } from 'chevrotain';
 import { isCstNode } from '../java/cst-utils.js';
+import type { WorkspaceIndex } from '../project/workspace-index.js';
+
+/**
+ * Go to implementation: find classes implementing an interface or overriding a method.
+ * Searches across the workspace index for types that extend/implement the symbol under cursor.
+ */
+export function provideImplementation(
+    cst: CstNode,
+    table: SymbolTable,
+    uri: string,
+    line: number,
+    character: number,
+    workspaceIndex: WorkspaceIndex,
+): lsp.Location[] {
+    const token = getTokenAtPosition(cst, line, character);
+    if (!token) return [];
+
+    const sym = resolveSymbolByName(table, token.image, line, character);
+    if (!sym) return [];
+
+    const locations: lsp.Location[] = [];
+
+    if (['class', 'interface'].includes(sym.kind)) {
+        // Find all types that reference this name in extends/implements
+        for (const fileUri of workspaceIndex.getFileUris()) {
+            const fileTable = workspaceIndex.getSymbolTable(fileUri);
+            if (!fileTable) continue;
+
+            for (const fileSym of fileTable.allSymbols) {
+                if (!['class', 'interface', 'enum', 'record'].includes(fileSym.kind)) continue;
+                if (fileSym.name === sym.name && fileUri === uri) continue;
+
+                // Check if this type extends/implements the target
+                if (fileSym.superclass === sym.name ||
+                    fileSym.interfaces?.includes(sym.name)) {
+                    locations.push(lsp.Location.create(
+                        fileUri,
+                        lsp.Range.create(fileSym.line, fileSym.column, fileSym.endLine, fileSym.endColumn),
+                    ));
+                }
+            }
+        }
+
+        // Also check the current file
+        for (const fileSym of table.allSymbols) {
+            if (!['class', 'interface', 'enum', 'record'].includes(fileSym.kind)) continue;
+            if (fileSym.name === sym.name) continue;
+            if (fileSym.superclass === sym.name ||
+                fileSym.interfaces?.includes(sym.name)) {
+                locations.push(lsp.Location.create(
+                    uri,
+                    lsp.Range.create(fileSym.line, fileSym.column, fileSym.endLine, fileSym.endColumn),
+                ));
+            }
+        }
+    } else if (sym.kind === 'method') {
+        // Find methods with the same name in subclasses
+        for (const fileUri of workspaceIndex.getFileUris()) {
+            const fileTable = workspaceIndex.getSymbolTable(fileUri);
+            if (!fileTable) continue;
+
+            for (const fileSym of fileTable.allSymbols) {
+                if (fileSym.kind !== 'method' || fileSym.name !== sym.name) continue;
+                if (fileUri === uri && fileSym.line === sym.line) continue;
+                locations.push(lsp.Location.create(
+                    fileUri,
+                    lsp.Range.create(fileSym.line, fileSym.column, fileSym.endLine, fileSym.endColumn),
+                ));
+            }
+        }
+    }
+
+    return locations;
+}
+
+/**
+ * Go to type definition: jump to the type declaration of a variable/field/parameter.
+ */
+export function provideTypeDefinition(
+    cst: CstNode,
+    table: SymbolTable,
+    uri: string,
+    line: number,
+    character: number,
+    workspaceIndex: WorkspaceIndex,
+): lsp.Location | null {
+    const token = getTokenAtPosition(cst, line, character);
+    if (!token) return null;
+
+    const sym = resolveSymbolByName(table, token.image, line, character);
+    if (!sym) return null;
+
+    // Get the type name from the symbol
+    const typeName = sym.type ?? sym.returnType;
+    if (!typeName) return null;
+
+    // Strip generics and array brackets
+    const baseType = typeName.replace(/<.*>/, '').replace(/\[\]/, '').trim();
+    if (!baseType || isPrimitive(baseType)) return null;
+
+    // Search in current file first
+    const localType = table.allSymbols.find(s =>
+        ['class', 'interface', 'enum', 'record'].includes(s.kind) && s.name === baseType,
+    );
+    if (localType) {
+        return lsp.Location.create(
+            uri,
+            lsp.Range.create(localType.line, localType.column, localType.endLine, localType.endColumn),
+        );
+    }
+
+    // Search workspace index
+    const wsType = workspaceIndex.findTypeByName(baseType);
+    if (wsType) {
+        return lsp.Location.create(
+            wsType.uri,
+            lsp.Range.create(wsType.line, wsType.column, wsType.line, wsType.column + wsType.name.length),
+        );
+    }
+
+    return null;
+}
+
+function isPrimitive(name: string): boolean {
+    return ['boolean', 'byte', 'char', 'short', 'int', 'long', 'float', 'double', 'void'].includes(name);
+}
 
 function collectAllIdentifierTokens(node: CstNode, name: string): IToken[] {
     const tokens: IToken[] = [];

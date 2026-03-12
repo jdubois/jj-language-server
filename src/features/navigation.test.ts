@@ -107,7 +107,7 @@ describe('navigation features', () => {
     describe('provideSelectionRanges', () => {
         it('should return nested selection ranges', () => {
             const { cst } = setup(code);
-            const ranges = provideSelectionRanges(cst, [{ line: 4, character: 15 }]);
+            const ranges = provideSelectionRanges(cst, '', [{ line: 4, character: 15 }]);
             expect(ranges).toHaveLength(1);
             // Should have at least one parent (containing block)
             expect(ranges[0].parent).toBeDefined();

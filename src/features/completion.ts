@@ -114,8 +114,13 @@ export function provideCompletions(
     table: SymbolTable,
     line: number,
     character: number,
+    text?: string,
 ): lsp.CompletionItem[] {
     const items: lsp.CompletionItem[] = [];
+
+    // Pre-compute import insert location if text is available
+    const importInsertLine = text ? findImportInsertLine(text.split('\n')) : 0;
+    const existingImports = text ? extractImportedNames(text) : new Set<string>();
 
     // Add visible symbols from scope
     const visible = findVisibleSymbols(table, line, character);
@@ -148,17 +153,30 @@ export function provideCompletions(
         items.push({ ...snippet, sortText: '4_' + snippet.label });
     }
 
-    // Add JDK standard library types
+    // Add JDK standard library types with auto-import
     for (const jdkType of getAllJdkTypes()) {
         if (seen.has(jdkType.name)) continue;
         seen.add(jdkType.name);
-        items.push({
+
+        const item: lsp.CompletionItem = {
             label: jdkType.name,
             kind: jdkTypeToCompletionKind(jdkType),
             detail: jdkType.qualifiedName,
             documentation: jdkType.description,
             sortText: '2_' + jdkType.name,
-        });
+        };
+
+        // Auto-import: add import statement when completing a non-java.lang type
+        if (text && jdkType.package !== 'java.lang' && !existingImports.has(jdkType.name)) {
+            item.additionalTextEdits = [
+                lsp.TextEdit.insert(
+                    lsp.Position.create(importInsertLine, 0),
+                    `import ${jdkType.qualifiedName};\n`,
+                ),
+            ];
+        }
+
+        items.push(item);
     }
 
     return items;
@@ -222,4 +240,30 @@ function jdkTypeToCompletionKind(jdkType: JdkType): lsp.CompletionItemKind {
         case 'annotation': return lsp.CompletionItemKind.Interface;
         default: return lsp.CompletionItemKind.Class;
     }
+}
+
+function findImportInsertLine(lines: string[]): number {
+    let lastImportLine = -1;
+    let packageLine = -1;
+
+    for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
+        if (trimmed.startsWith('package ')) packageLine = i;
+        if (trimmed.startsWith('import ')) lastImportLine = i;
+    }
+
+    if (lastImportLine >= 0) return lastImportLine + 1;
+    if (packageLine >= 0) return packageLine + 2;
+    return 0;
+}
+
+function extractImportedNames(text: string): Set<string> {
+    const names = new Set<string>();
+    const regex = /import\s+(static\s+)?([a-zA-Z0-9_.]+)\s*;/g;
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+        const parts = match[2].split('.');
+        names.add(parts[parts.length - 1]);
+    }
+    return names;
 }

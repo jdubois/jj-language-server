@@ -13,22 +13,25 @@ import type { Logger } from './utils/logger.js';
 import { parseJava, type ParseResult } from './java/parser.js';
 import { buildSymbolTable, type SymbolTable } from './java/symbol-table.js';
 import { parseErrorsToDiagnostics } from './diagnostics.js';
+import { computeSemanticDiagnostics } from './features/semantic-diagnostics.js';
 import { extractDocumentSymbols } from './features/document-symbols.js';
 import { computeFoldingRanges } from './features/folding-ranges.js';
 import { formatDocument, formatRange } from './features/formatting.js';
 import { provideHover } from './features/hover.js';
 import { provideCompletions } from './features/completion.js';
 import { provideSignatureHelp } from './features/signature-help.js';
-import { provideDefinition, provideReferences, provideDocumentHighlight, provideRename, providePrepareRename } from './features/navigation.js';
+import { provideDefinition, provideReferences, provideDocumentHighlight, provideRename, providePrepareRename, provideImplementation, provideTypeDefinition } from './features/navigation.js';
 import { provideSelectionRanges } from './features/selection-range.js';
 import { computeSemanticTokens, getSemanticTokensLegend } from './features/semantic-tokens.js';
 import { getTokenAtPosition } from './features/token-utils.js';
 import { provideCodeActions } from './features/code-actions.js';
+import { provideSourceGenerationActions } from './features/source-generation.js';
 import { organizeImports } from './features/organize-imports.js';
 import { provideInlayHints } from './features/inlay-hints.js';
 import { prepareCallHierarchy, provideIncomingCalls, provideOutgoingCalls } from './features/call-hierarchy.js';
 import { prepareTypeHierarchy, provideSupertypes, provideSubtypes } from './features/type-hierarchy.js';
 import { provideCodeLens } from './features/code-lens.js';
+import { provideOnTypeFormatting } from './features/on-type-formatting.js';
 import { WorkspaceIndex } from './project/workspace-index.js';
 
 export interface LspServerOptions {
@@ -62,6 +65,10 @@ export class LspServer {
                 documentSymbolProvider: true,
                 documentFormattingProvider: true,
                 documentRangeFormattingProvider: true,
+                documentOnTypeFormattingProvider: {
+                    firstTriggerCharacter: '\n',
+                    moreTriggerCharacter: ['}', ';'],
+                },
                 foldingRangeProvider: true,
                 hoverProvider: true,
                 completionProvider: {
@@ -72,6 +79,8 @@ export class LspServer {
                     triggerCharacters: ['(', ','],
                 },
                 definitionProvider: true,
+                implementationProvider: true,
+                typeDefinitionProvider: true,
                 referencesProvider: true,
                 documentHighlightProvider: true,
                 renameProvider: {
@@ -170,6 +179,12 @@ export class LspServer {
         return formatRange(document, params.range, params.options);
     }
 
+    onTypeFormatting(params: lsp.DocumentOnTypeFormattingParams): lsp.TextEdit[] | null {
+        const doc = this.documents.get(params.textDocument.uri);
+        if (!doc) return null;
+        return provideOnTypeFormatting(doc.getText(), params.position, params.ch, params.options);
+    }
+
     foldingRanges(params: lsp.FoldingRangeParams): lsp.FoldingRange[] | null {
         const result = this.parseResults.get(params.textDocument.uri);
         const document = this.documents.get(params.textDocument.uri);
@@ -189,7 +204,9 @@ export class LspServer {
     completion(params: lsp.CompletionParams): lsp.CompletionItem[] | null {
         const table = this.symbolTables.get(params.textDocument.uri);
         if (!table) return null;
-        return provideCompletions(table, params.position.line, params.position.character);
+        const doc = this.documents.get(params.textDocument.uri);
+        const text = doc?.getText();
+        return provideCompletions(table, params.position.line, params.position.character, text);
     }
 
     completionResolve(item: lsp.CompletionItem): lsp.CompletionItem {
@@ -226,6 +243,23 @@ export class LspServer {
         }
 
         return null;
+    }
+
+    implementation(params: lsp.ImplementationParams): lsp.Location[] | null {
+        const { uri } = params.textDocument;
+        const result = this.parseResults.get(uri);
+        const table = this.symbolTables.get(uri);
+        if (!result?.cst || !table) return null;
+        const locations = provideImplementation(result.cst, table, uri, params.position.line, params.position.character, this.workspaceIndex);
+        return locations.length > 0 ? locations : null;
+    }
+
+    typeDefinition(params: lsp.TypeDefinitionParams): lsp.Location | null {
+        const { uri } = params.textDocument;
+        const result = this.parseResults.get(uri);
+        const table = this.symbolTables.get(uri);
+        if (!result?.cst || !table) return null;
+        return provideTypeDefinition(result.cst, table, uri, params.position.line, params.position.character, this.workspaceIndex);
     }
 
     references(params: lsp.ReferenceParams): lsp.Location[] | null {
@@ -269,7 +303,33 @@ export class LspServer {
         const result = this.parseResults.get(uri);
         const table = this.symbolTables.get(uri);
         if (!result?.cst || !table) return null;
-        return provideRename(result.cst, table, uri, params.position.line, params.position.character, params.newName);
+
+        // Start with single-file rename
+        const singleFile = provideRename(result.cst, table, uri, params.position.line, params.position.character, params.newName);
+        if (!singleFile) return null;
+
+        // Extend to cross-file rename via workspace index
+        const token = getTokenAtPosition(result.cst, params.position.line, params.position.character);
+        if (!token) return singleFile;
+
+        const name = token.image;
+        const allChanges: { [uri: string]: lsp.TextEdit[] } = { ...singleFile.changes };
+
+        for (const fileUri of this.workspaceIndex.getFileUris()) {
+            if (fileUri === uri) continue;
+            const fileResult = this.workspaceIndex.getParseResult(fileUri);
+            const fileTable = this.workspaceIndex.getSymbolTable(fileUri);
+            if (!fileResult?.cst || !fileTable) continue;
+
+            const refs = provideReferences(fileResult.cst, fileTable, fileUri, 0, 0, name);
+            if (refs.length > 0) {
+                allChanges[fileUri] = refs.map(ref =>
+                    lsp.TextEdit.replace(ref.range, params.newName),
+                );
+            }
+        }
+
+        return { changes: allChanges };
     }
 
     prepareRename(params: lsp.PrepareRenameParams): lsp.Range | null {
@@ -283,7 +343,7 @@ export class LspServer {
     selectionRanges(params: lsp.SelectionRangeParams): lsp.SelectionRange[] | null {
         const result = this.parseResults.get(params.textDocument.uri);
         if (!result?.cst) return null;
-        return provideSelectionRanges(result.cst, params.positions);
+        return provideSelectionRanges(result.cst, '', params.positions);
     }
 
     executeCommand(_params: lsp.ExecuteCommandParams): unknown {
@@ -318,14 +378,16 @@ export class LspServer {
     semanticTokensFull(params: lsp.SemanticTokensParams): lsp.SemanticTokens {
         const result = this.parseResults.get(params.textDocument.uri);
         if (!result?.cst) return { data: [] };
-        return computeSemanticTokens(result.cst);
+        const table = this.symbolTables.get(params.textDocument.uri);
+        return computeSemanticTokens(result.cst, table);
     }
 
     semanticTokensRange(params: lsp.SemanticTokensRangeParams): lsp.SemanticTokens {
         // For now, return full tokens (range filtering can be optimized later)
         const result = this.parseResults.get(params.textDocument.uri);
         if (!result?.cst) return { data: [] };
-        return computeSemanticTokens(result.cst);
+        const table = this.symbolTables.get(params.textDocument.uri);
+        return computeSemanticTokens(result.cst, table);
     }
 
     codeAction(params: lsp.CodeActionParams): lsp.CodeAction[] {
@@ -336,7 +398,9 @@ export class LspServer {
         if (!table) return [];
         const doc = this.documents.get(uri);
         if (!doc) return [];
-        return provideCodeActions(result.cst, table, doc.getText(), params.range, params.context.diagnostics);
+        const actions = provideCodeActions(result.cst, table, doc.getText(), uri, params.range, params.context);
+        const genActions = provideSourceGenerationActions(table, doc.getText(), params.range, uri);
+        return [...actions, ...genActions];
     }
 
     inlayHint(params: lsp.InlayHintParams): lsp.InlayHint[] {
@@ -418,7 +482,18 @@ export class LspServer {
             this.workspaceIndex.updateFile(uri, result, table);
         }
 
-        const diagnostics = parseErrorsToDiagnostics(result.errors);
+        const parseDiagnostics = parseErrorsToDiagnostics(result.errors);
+
+        // Run semantic checks if we have a valid CST and symbol table
+        let semanticDiagnostics: ReturnType<typeof computeSemanticDiagnostics> = [];
+        if (result.cst && result.errors.length === 0) {
+            const table = this.symbolTables.get(uri);
+            if (table) {
+                semanticDiagnostics = computeSemanticDiagnostics(result.cst, table, text);
+            }
+        }
+
+        const diagnostics = [...parseDiagnostics, ...semanticDiagnostics];
         this.lspClient.publishDiagnostics({ uri, diagnostics });
 
         if (result.errors.length > 0) {

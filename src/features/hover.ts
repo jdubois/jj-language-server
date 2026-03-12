@@ -31,17 +31,17 @@ export function provideHover(
     // Try to find by exact position first
     let sym = findSymbolAtPosition(table, line, character);
 
-    // If we didn't find at position, resolve by name
-    if (!sym || sym.name !== tokenName) {
+    // If the token is an identifier and doesn't match the positional symbol, resolve by name
+    if (!sym || (sym.name !== tokenName && token.tokenType?.name === 'Identifier')) {
         sym = resolveSymbolByName(table, tokenName, line, character);
     }
 
-    const range = lsp.Range.create(
-        (token.startLine ?? 1) - 1,
-        (token.startColumn ?? 1) - 1,
-        (token.endLine ?? 1) - 1,
-        token.endColumn ?? 0,
-    );
+    const startLine = Number.isFinite(token.startLine) ? token.startLine! - 1 : 0;
+    const startCol = Number.isFinite(token.startColumn) ? token.startColumn! - 1 : 0;
+    const endLine = Number.isFinite(token.endLine) ? token.endLine! - 1 : startLine;
+    const endCol = Number.isFinite(token.endColumn) ? token.endColumn! : startCol;
+
+    const range = lsp.Range.create(startLine, startCol, endLine, endCol);
 
     if (sym) {
         return { contents: formatSymbolHover(sym), range };

@@ -33,6 +33,7 @@ export function createLspConnection(options: LspConnectionOptions): lsp.Connecti
     connection.onDocumentSymbol(server.documentSymbol.bind(server));
     connection.onDocumentFormatting(server.documentFormatting.bind(server));
     connection.onDocumentRangeFormatting(server.documentRangeFormatting.bind(server));
+    connection.onDocumentOnTypeFormatting(server.onTypeFormatting.bind(server));
     connection.onFoldingRanges(server.foldingRanges.bind(server));
 
     connection.onHover(server.hover.bind(server));

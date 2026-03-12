@@ -30,6 +30,10 @@ export interface JavaSymbol {
     parent?: string;
     /** Children symbols (members of a class/interface) */
     children: JavaSymbol[];
+    /** Superclass name (for classes) */
+    superclass?: string;
+    /** Implemented/extended interface names */
+    interfaces?: string[];
 }
 
 export interface SymbolTable {
@@ -89,6 +93,16 @@ function extractClassSymbol(node: CstNode, parent: string | undefined): JavaSymb
             name, kind: 'class', modifiers, parent,
             ...pos, children: [],
         };
+        // Extract superclass (CST node is "classExtends")
+        const classExtends = getChild(normalClass, 'classExtends');
+        if (classExtends) {
+            sym.superclass = extractTypeName(classExtends);
+        }
+        // Extract implemented interfaces (CST node is "classImplements")
+        const classImplements = getChild(normalClass, 'classImplements');
+        if (classImplements) {
+            sym.interfaces = extractTypeNames(classImplements);
+        }
         extractClassBodySymbols(normalClass, sym);
         return sym;
     }
@@ -134,6 +148,11 @@ function extractInterfaceSymbol(node: CstNode, parent: string | undefined): Java
             name, kind: 'interface', modifiers, parent,
             ...pos, children: [],
         };
+        // Extract extended interfaces (CST node is "interfaceExtends")
+        const interfaceExtends = getChild(normalInterface, 'interfaceExtends');
+        if (interfaceExtends) {
+            sym.interfaces = extractTypeNames(interfaceExtends);
+        }
         const body = getChild(normalInterface, 'interfaceBody');
         if (body) {
             const memberDecls = getChildren(body, 'interfaceMemberDeclaration');
@@ -428,6 +447,36 @@ function collectAllTokens(node: CstNode, tokens: IToken[]): void {
 }
 
 // --- Modifier extraction ---
+
+// --- Superclass/interface name extraction ---
+
+function extractTypeName(node: CstNode): string | undefined {
+    const ids: string[] = [];
+    collectIdentifierTokens(node, ids);
+    return ids[0];
+}
+
+function extractTypeNames(node: CstNode): string[] {
+    const ids: string[] = [];
+    collectIdentifierTokens(node, ids);
+    return ids;
+}
+
+function collectIdentifierTokens(node: CstNode, ids: string[]): void {
+    for (const children of Object.values(node.children)) {
+        if (!children) continue;
+        for (const child of children as CstElement[]) {
+            if (isCstNode(child)) {
+                collectIdentifierTokens(child, ids);
+            } else {
+                const token = child as IToken;
+                if (token.tokenType?.name === 'Identifier') {
+                    ids.push(token.image);
+                }
+            }
+        }
+    }
+}
 
 function extractModifiers(node: CstNode, key: string): string[] {
     const modifiers: string[] = [];

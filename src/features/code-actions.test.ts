@@ -16,7 +16,7 @@ function getActions(code: string, startLine = 0, startChar = 0, endLine = 0, end
     const result = parseJava(code);
     const table = buildSymbolTable(result.cst!);
     const range = lsp.Range.create(startLine, startChar, endLine, endChar);
-    return provideCodeActions(result.cst!, table, code, range, []);
+    return provideCodeActions(result.cst!, table, code, '', range, { diagnostics: [] });
 }
 
 describe('code-actions', () => {

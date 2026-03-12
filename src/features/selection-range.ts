@@ -17,6 +17,7 @@ import { isCstNode } from '../java/cst-utils.js';
  */
 export function provideSelectionRanges(
     cst: CstNode,
+    _text: string,
     positions: lsp.Position[],
 ): lsp.SelectionRange[] {
     return positions.map(pos => computeSelectionRange(cst, pos));

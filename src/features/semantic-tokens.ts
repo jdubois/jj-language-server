@@ -8,6 +8,8 @@
 
 import lsp from 'vscode-languageserver';
 import type { CstNode, CstElement, IToken } from 'chevrotain';
+import type { SymbolTable } from '../java/symbol-table.js';
+import { findSymbolAtPosition, resolveSymbolByName } from '../java/scope-resolver.js';
 import { isCstNode } from '../java/cst-utils.js';
 
 // Semantic token types - must match the legend sent to the client
@@ -56,8 +58,9 @@ export function getSemanticTokensLegend(): lsp.SemanticTokensLegend {
 
 /**
  * Compute semantic tokens for a parsed Java file.
+ * When a SymbolTable is provided, identifiers are classified contextually.
  */
-export function computeSemanticTokens(cst: CstNode): lsp.SemanticTokens {
+export function computeSemanticTokens(cst: CstNode, table?: SymbolTable): lsp.SemanticTokens {
     const tokens: IToken[] = [];
     collectAllTokens(cst, tokens);
     tokens.sort((a, b) => a.startOffset - b.startOffset);
@@ -67,7 +70,7 @@ export function computeSemanticTokens(cst: CstNode): lsp.SemanticTokens {
     let prevChar = 0;
 
     for (const token of tokens) {
-        const tokenType = classifyToken(token);
+        const { type: tokenType, modifiers } = classifyTokenWithContext(token, table);
         if (tokenType < 0) continue;
 
         const line = (token.startLine ?? 1) - 1;
@@ -77,13 +80,61 @@ export function computeSemanticTokens(cst: CstNode): lsp.SemanticTokens {
         const deltaLine = line - prevLine;
         const deltaChar = deltaLine === 0 ? char - prevChar : char;
 
-        data.push(deltaLine, deltaChar, length, tokenType, 0);
+        data.push(deltaLine, deltaChar, length, tokenType, modifiers);
 
         prevLine = line;
         prevChar = char;
     }
 
     return { data };
+}
+
+function classifyTokenWithContext(token: IToken, table?: SymbolTable): { type: number; modifiers: number } {
+    const basicType = classifyToken(token);
+    if (basicType >= 0) return { type: basicType, modifiers: 0 };
+
+    // Try to classify identifiers using the symbol table
+    if (table && token.tokenType?.name === 'Identifier') {
+        const line = (token.startLine ?? 1) - 1;
+        const col = (token.startColumn ?? 1) - 1;
+
+        let sym = findSymbolAtPosition(table, line, col);
+        if (!sym || sym.name !== token.image) {
+            sym = resolveSymbolByName(table, token.image, line, col);
+        }
+
+        if (sym) {
+            let modBits = 0;
+            if (sym.modifiers.includes('static')) modBits |= (1 << 3);
+            if (sym.modifiers.includes('abstract')) modBits |= (1 << 5);
+            if (sym.modifiers.includes('final')) modBits |= (1 << 2);
+
+            // Check if this is at the declaration position
+            if (sym.line === line && sym.column === col) {
+                modBits |= (1 << 0); // declaration
+            }
+
+            switch (sym.kind) {
+                case 'class': return { type: 2, modifiers: modBits };
+                case 'interface': return { type: 4, modifiers: modBits };
+                case 'enum': return { type: 3, modifiers: modBits };
+                case 'record': return { type: 5, modifiers: modBits };
+                case 'method':
+                case 'constructor': return { type: 12, modifiers: modBits };
+                case 'field': return { type: 9, modifiers: modBits };
+                case 'variable': return { type: 8, modifiers: modBits };
+                case 'parameter': return { type: 7, modifiers: modBits };
+                case 'enumConstant': return { type: 10, modifiers: modBits };
+            }
+        }
+
+        // Uppercase identifier without symbol match - likely a type reference
+        if (/^[A-Z]/.test(token.image)) {
+            return { type: 1, modifiers: 0 }; // type
+        }
+    }
+
+    return { type: -1, modifiers: 0 };
 }
 
 function classifyToken(token: IToken): number {

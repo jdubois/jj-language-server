@@ -1,0 +1,87 @@
+name: Update Spring PetClinic
+
+on:
+  schedule:
+    # Every Monday at 08:00 UTC
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-petclinic:
+    name: Check for Spring PetClinic updates
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get current pinned commit
+        id: current
+        run: |
+          if [ -f test-fixtures/spring-petclinic-sha.txt ]; then
+            echo "sha=$(cat test-fixtures/spring-petclinic-sha.txt)" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=none" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Get latest PetClinic commit
+        id: latest
+        run: |
+          LATEST_SHA=$(git ls-remote https://github.com/spring-projects/spring-petclinic.git HEAD | cut -f1)
+          echo "sha=$LATEST_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Check if update needed
+        id: check
+        run: |
+          if [ "${{ steps.current.outputs.sha }}" = "${{ steps.latest.outputs.sha }}" ]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update pinned commit
+        if: steps.check.outputs.needed == 'true'
+        run: |
+          mkdir -p test-fixtures
+          echo "${{ steps.latest.outputs.sha }}" > test-fixtures/spring-petclinic-sha.txt
+
+      - name: Verify PetClinic at new commit
+        if: steps.check.outputs.needed == 'true'
+        run: |
+          git clone --depth 1 https://github.com/spring-projects/spring-petclinic.git test-fixtures/spring-petclinic
+
+      - name: Use Node.js
+        if: steps.check.outputs.needed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Run tests against new PetClinic
+        if: steps.check.outputs.needed == 'true'
+        run: |
+          npm ci
+          npm run build
+          npm run test:run
+
+      - name: Create pull request
+        if: steps.check.outputs.needed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore: update Spring PetClinic to ${{ steps.latest.outputs.sha }}"
+          title: "chore: update Spring PetClinic test fixture"
+          body: |
+            Updates the Spring PetClinic test fixture to the latest commit.
+
+            - **Previous SHA:** `${{ steps.current.outputs.sha }}`
+            - **New SHA:** `${{ steps.latest.outputs.sha }}`
+            - **Repository:** https://github.com/spring-projects/spring-petclinic
+
+            Tests have been verified against the new version.
+          branch: chore/update-spring-petclinic
+          labels: |
+            dependencies
+            spring-petclinic

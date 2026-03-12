@@ -19,12 +19,13 @@ export function provideCodeActions(
     cst: CstNode,
     table: SymbolTable,
     text: string,
+    uri: string,
     range: lsp.Range,
-    diagnostics: lsp.Diagnostic[],
+    context: { diagnostics: lsp.Diagnostic[] },
 ): lsp.CodeAction[] {
     const actions: lsp.CodeAction[] = [];
     const lines = text.split('\n');
-    const uri = ''; // Will be set by caller
+    const diagnostics = context.diagnostics;
 
     // Organize imports action (always available)
     actions.push({
@@ -36,30 +37,61 @@ export function provideCodeActions(
     // Generate actions from selected text/range
     const selectedText = getTextInRange(lines, range);
 
-    // "Extract variable" if selecting an expression
+    // "Extract variable" with real edit
     if (selectedText && selectedText.trim().length > 0 && !selectedText.includes('\n')) {
+        const trimmed = selectedText.trim();
+        const varName = 'newVariable';
+        const indent = getIndentation(lines, range.start.line);
+        const declaration = `${indent}var ${varName} = ${trimmed};\n`;
+        const edits: lsp.TextEdit[] = [
+            // Insert variable declaration before the current line
+            lsp.TextEdit.insert(lsp.Position.create(range.start.line, 0), declaration),
+            // Replace the selected expression with the variable name
+            lsp.TextEdit.replace(range, varName),
+        ];
         actions.push({
             title: `Extract to local variable`,
             kind: lsp.CodeActionKind.RefactorExtract,
+            edit: { changes: { [uri]: edits } },
         });
     }
 
-    // "Surround with try-catch"
+    // "Surround with try-catch" with real edit
     if (range.start.line !== range.end.line || selectedText.trim().length > 0) {
+        const indent = getIndentation(lines, range.start.line);
+        const innerIndent = indent + '    ';
+        const selectedLines = getTextInRange(lines, range);
+        const reindented = selectedLines.split('\n').map(l => innerIndent + l.trimStart()).join('\n');
+
+        const tryBlock = `${indent}try {\n${reindented}\n${indent}} catch (Exception e) {\n${innerIndent}e.printStackTrace();\n${indent}}`;
+
+        const fullRange = lsp.Range.create(
+            range.start.line, 0,
+            range.end.line, lines[range.end.line]?.length ?? 0,
+        );
         actions.push({
             title: 'Surround with try-catch',
             kind: lsp.CodeActionKind.Refactor,
+            edit: { changes: { [uri]: [lsp.TextEdit.replace(fullRange, tryBlock)] } },
         });
     }
 
-    // Add import for unresolved types
+    // Add import for unresolved types with real edit
     const unresolvedTypes = findUnresolvedTypeNames(cst, table, text);
     for (const typeName of unresolvedTypes) {
         const jdkType = getJdkType(typeName);
         if (jdkType && jdkType.package !== 'java.lang') {
+            const importLine = `import ${jdkType.qualifiedName};\n`;
+            const insertLine = findImportInsertLine(lines);
             actions.push({
                 title: `Add import '${jdkType.qualifiedName}'`,
                 kind: lsp.CodeActionKind.QuickFix,
+                isPreferred: true,
+                edit: {
+                    changes: {
+                        [uri]: [lsp.TextEdit.insert(lsp.Position.create(insertLine, 0), importLine)],
+                    },
+                },
             });
         }
     }
@@ -127,4 +159,25 @@ function collectPotentialTypeRefs(node: CstNode, refs: Set<string>): void {
             }
         }
     }
+}
+
+function getIndentation(lines: string[], lineNum: number): string {
+    const line = lines[lineNum] ?? '';
+    const match = line.match(/^(\s*)/);
+    return match ? match[1] : '';
+}
+
+function findImportInsertLine(lines: string[]): number {
+    let lastImportLine = -1;
+    let packageLine = -1;
+
+    for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
+        if (trimmed.startsWith('package ')) packageLine = i;
+        if (trimmed.startsWith('import ')) lastImportLine = i;
+    }
+
+    if (lastImportLine >= 0) return lastImportLine + 1;
+    if (packageLine >= 0) return packageLine + 2;
+    return 0;
 }
