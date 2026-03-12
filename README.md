@@ -39,17 +39,23 @@ Options:
 - **Selection range** — smart expand/shrink via CST hierarchy
 - **Code lens** — reference counts above declarations
 - **Source generation** — generate constructors, getters/setters, toString, equals/hashCode (real TextEdit insertions)
-- **Diagnostics** — parse errors, duplicate declarations, unused imports, missing return statements, unreachable code, unresolved type references
+- **Diagnostics** — parse errors, duplicate declarations, unused imports, missing return statements, unreachable code, unresolved type references, deprecated API warnings (`@Deprecated`), unresolved method detection, access control violations, missing `@Override` hints
 - **Maven/Gradle parsing** — extracts project metadata, dependencies, source directories, Java version
+- **Javadoc** — parses `/** */` comments, renders in hover & completion
+- **Type hierarchy** — real supertypes/subtypes using symbol table
+- **File watcher** — `workspace/didChangeWatchedFiles` to re-index on external changes
+- **Workspace configuration** — settings for formatter, Java version, classpath hints
+- **Import resolution** — resolves `import` statements, maps unqualified names throughout the file
+- **Type inference** — local variable types, expression types (method calls, field access, literals, operators), type resolver for symbols, members, method return types, field types
 
 ### 🟡 Partially Implemented
 
-These features work but are limited to **name-based resolution** (no type inference):
+These features work but have some remaining limitations:
 
-- **Hover** — symbol signatures + JDK type info (no Javadoc extraction from source comments)
-- **Code completion** — scope-aware symbols, JDK types with auto-import, keywords, snippets (no method chain completion, no overload resolution)
+- **Hover** — symbol signatures + JDK type info + Javadoc from source comments (no dependency JAR Javadoc)
+- **Code completion** — scope-aware symbols, JDK types with auto-import, keywords, snippets (no overload resolution)
 - **Signature help** — parameter hints for local methods (no JDK method signatures)
-- **Go-to-definition** — local + cross-file via workspace index (no import-resolved or dependency JAR navigation)
+- **Go-to-definition** — local + cross-file via workspace index, import-resolved (no dependency JAR navigation)
 - **Go-to-implementation** — finds subclasses/implementors in workspace
 - **Go-to-type-definition** — navigates to type declaration of a variable
 - **Find references / Document highlight** — finds matching identifiers (no qualified access like `this.x`)
@@ -57,21 +63,14 @@ These features work but are limited to **name-based resolution** (no type infere
 - **Semantic tokens** — classifies identifiers via symbol table (no generic type params)
 - **Inlay hints** — parameter name hints on method calls (no inferred type hints for `var`)
 - **Call hierarchy** — incoming/outgoing calls (single-file only)
-- **Code actions** — organize imports, extract variable, surround with try-catch, add import
+- **Code actions** — organize imports, extract variable, extract method, extract constant, inline variable, surround with try-catch, add import
 
 ### ❌ Not Yet Implemented
 
-**The #1 gap vs JDTLS is the absence of a type inference engine.** JDTLS (via Eclipse JDT Core) has full Java type resolution. Without it, this server cannot resolve method chains, detect type mismatches, pick correct overloads, or navigate into dependency code.
-
-- **Type system** — type inference, import resolution, expression types, generics, overload resolution
-- **Type hierarchy resolution** — `prepareTypeHierarchy` works, but supertypes/subtypes are not yet wired
-- **Javadoc rendering** — extraction of `/** */` comments for hover/completion
-- **Advanced diagnostics** — type mismatch errors, unresolved method/field, access control violations, deprecated warnings
-- **Advanced refactoring** — extract method, extract constant, inline, move class, change method signature
+- **Generics & overload resolution** — generic type parameters, bounded wildcards, overloaded method selection
+- **Advanced refactoring** — move class, change method signature
 - **Classpath resolution** — dependency JAR analysis, source JAR navigation, full JDK API model
 - **Annotation processing** — Lombok, MapStruct, etc.
-- **File watching** — re-index on external file changes
-- **Workspace configuration** — settings for formatter style, classpath, Java version
 - **Incremental parsing** — currently full reparse on every change
 
 ### Roadmap
@@ -82,10 +81,10 @@ These features work but are limited to **name-based resolution** (no type infere
 | 2. Source Generation | Constructor, getters/setters, toString, equals/hashCode | ✅ Done |
 | 3. Enhanced Features | Real code action edits, semantic tokens, cross-file rename | ✅ Done |
 | 4. Navigation | Go-to-implementation, type definition, improved cross-file def | ✅ Done |
-| 5. Quick Wins | Javadoc extraction, type hierarchy wiring, file watcher | 🔲 Next |
-| 6. Type Resolution | Import resolution, local type inference, cross-file types | 🔲 Planned |
-| 7. Advanced Diagnostics | Type mismatch, unresolved references, access control | 🔲 Planned |
-| 8. Advanced Refactoring | Extract method, inline, move, change signature | 🔲 Planned |
+| 5. Quick Wins | Javadoc extraction, type hierarchy wiring, file watcher, workspace config | ✅ Done |
+| 6. Type Resolution | Import resolution, local type inference, expression types, type resolver | ✅ Done |
+| 7. Advanced Diagnostics | Deprecated warnings, unresolved methods, access control, missing @Override | ✅ Done |
+| 8. Advanced Refactoring | Extract method, extract constant, inline variable | ✅ Done |
 | 9. Classpath Resolution | Dependency JARs, full JDK model, source navigation | 🔲 Planned |
 
 ## How It Works
@@ -107,7 +106,7 @@ npm run build
 npm test
 ```
 
-Integration tests use the [Spring PetClinic](https://github.com/spring-projects/spring-petclinic) project as a realistic fixture. The pinned commit is tracked in `test-fixtures/spring-petclinic-sha.txt`.
+There are **280 tests** across 23 test files. Integration tests use the [Spring PetClinic](https://github.com/spring-projects/spring-petclinic) project as a realistic fixture. The pinned commit is tracked in `test-fixtures/spring-petclinic-sha.txt`.
 
 ### CI / CD
 
