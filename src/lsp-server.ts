@@ -12,6 +12,9 @@ import type { LspClient } from './lsp-client.js';
 import type { Logger } from './utils/logger.js';
 import { parseJava, type ParseResult } from './java/parser.js';
 import { parseErrorsToDiagnostics } from './diagnostics.js';
+import { extractDocumentSymbols } from './features/document-symbols.js';
+import { computeFoldingRanges } from './features/folding-ranges.js';
+import { formatDocument, formatRange } from './features/formatting.js';
 
 export interface LspServerOptions {
     logger: Logger;
@@ -35,10 +38,10 @@ export class LspServer {
         return {
             capabilities: {
                 textDocumentSync: lsp.TextDocumentSyncKind.Full,
-                documentSymbolProvider: false,
-                documentFormattingProvider: false,
-                documentRangeFormattingProvider: false,
-                foldingRangeProvider: false,
+                documentSymbolProvider: true,
+                documentFormattingProvider: true,
+                documentRangeFormattingProvider: true,
+                foldingRangeProvider: true,
                 hoverProvider: false,
                 completionProvider: undefined,
                 signatureHelpProvider: undefined,
@@ -101,20 +104,29 @@ export class LspServer {
 
     // --- Features (stubs for future phases) ---
 
-    documentSymbol(_params: lsp.DocumentSymbolParams): lsp.DocumentSymbol[] | null {
-        return null;
+    documentSymbol(params: lsp.DocumentSymbolParams): lsp.DocumentSymbol[] | null {
+        const result = this.parseResults.get(params.textDocument.uri);
+        if (!result?.cst) return null;
+        return extractDocumentSymbols(result.cst);
     }
 
-    documentFormatting(_params: lsp.DocumentFormattingParams): lsp.TextEdit[] | null {
-        return null;
+    async documentFormatting(params: lsp.DocumentFormattingParams): Promise<lsp.TextEdit[] | null> {
+        const document = this.documents.get(params.textDocument.uri);
+        if (!document) return null;
+        return formatDocument(document, params.options);
     }
 
-    documentRangeFormatting(_params: lsp.DocumentRangeFormattingParams): lsp.TextEdit[] | null {
-        return null;
+    async documentRangeFormatting(params: lsp.DocumentRangeFormattingParams): Promise<lsp.TextEdit[] | null> {
+        const document = this.documents.get(params.textDocument.uri);
+        if (!document) return null;
+        return formatRange(document, params.range, params.options);
     }
 
-    foldingRanges(_params: lsp.FoldingRangeParams): lsp.FoldingRange[] | null {
-        return null;
+    foldingRanges(params: lsp.FoldingRangeParams): lsp.FoldingRange[] | null {
+        const result = this.parseResults.get(params.textDocument.uri);
+        const document = this.documents.get(params.textDocument.uri);
+        if (!result?.cst || !document) return null;
+        return computeFoldingRanges(result.cst, document.getText());
     }
 
     hover(_params: lsp.HoverParams): lsp.Hover | null {

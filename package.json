@@ -36,6 +36,8 @@
     "commander": "^14.0.0",
     "eslint": "^9.0.0",
     "java-parser": "^2.3.2",
+    "prettier": "^3.8.1",
+    "prettier-plugin-java": "^2.8.1",
     "rimraf": "^6.0.0",
     "rollup": "^4.0.0",
     "typescript": "^5.0.0",
