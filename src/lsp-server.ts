@@ -11,10 +11,14 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import type { LspClient } from './lsp-client.js';
 import type { Logger } from './utils/logger.js';
 import { parseJava, type ParseResult } from './java/parser.js';
+import { buildSymbolTable, type SymbolTable } from './java/symbol-table.js';
 import { parseErrorsToDiagnostics } from './diagnostics.js';
 import { extractDocumentSymbols } from './features/document-symbols.js';
 import { computeFoldingRanges } from './features/folding-ranges.js';
 import { formatDocument, formatRange } from './features/formatting.js';
+import { provideHover } from './features/hover.js';
+import { provideCompletions } from './features/completion.js';
+import { provideSignatureHelp } from './features/signature-help.js';
 
 export interface LspServerOptions {
     logger: Logger;
@@ -26,6 +30,7 @@ export class LspServer {
     private lspClient: LspClient;
     private documents: Map<string, TextDocument> = new Map();
     private parseResults: Map<string, ParseResult> = new Map();
+    private symbolTables: Map<string, SymbolTable> = new Map();
 
     constructor(options: LspServerOptions) {
         this.logger = options.logger;
@@ -42,9 +47,14 @@ export class LspServer {
                 documentFormattingProvider: true,
                 documentRangeFormattingProvider: true,
                 foldingRangeProvider: true,
-                hoverProvider: false,
-                completionProvider: undefined,
-                signatureHelpProvider: undefined,
+                hoverProvider: true,
+                completionProvider: {
+                    triggerCharacters: ['.', '@'],
+                    resolveProvider: true,
+                },
+                signatureHelpProvider: {
+                    triggerCharacters: ['(', ','],
+                },
                 definitionProvider: false,
                 referencesProvider: false,
                 documentHighlightProvider: false,
@@ -66,6 +76,7 @@ export class LspServer {
         this.logger.info('jj-language-server shutting down');
         this.documents.clear();
         this.parseResults.clear();
+        this.symbolTables.clear();
     }
 
     // --- Text Document Synchronization ---
@@ -95,6 +106,7 @@ export class LspServer {
         const { uri } = params.textDocument;
         this.documents.delete(uri);
         this.parseResults.delete(uri);
+        this.symbolTables.delete(uri);
         this.lspClient.publishDiagnostics({ uri, diagnostics: [] });
     }
 
@@ -129,20 +141,30 @@ export class LspServer {
         return computeFoldingRanges(result.cst, document.getText());
     }
 
-    hover(_params: lsp.HoverParams): lsp.Hover | null {
-        return null;
+    hover(params: lsp.HoverParams): lsp.Hover | null {
+        const { uri } = params.textDocument;
+        const result = this.parseResults.get(uri);
+        const table = this.symbolTables.get(uri);
+        const document = this.documents.get(uri);
+        if (!result?.cst || !table || !document) return null;
+        return provideHover(result.cst, table, document.getText(), params.position.line, params.position.character);
     }
 
-    completion(_params: lsp.CompletionParams): lsp.CompletionItem[] | null {
-        return null;
+    completion(params: lsp.CompletionParams): lsp.CompletionItem[] | null {
+        const table = this.symbolTables.get(params.textDocument.uri);
+        if (!table) return null;
+        return provideCompletions(table, params.position.line, params.position.character);
     }
 
     completionResolve(item: lsp.CompletionItem): lsp.CompletionItem {
         return item;
     }
 
-    signatureHelp(_params: lsp.SignatureHelpParams): lsp.SignatureHelp | null {
-        return null;
+    signatureHelp(params: lsp.SignatureHelpParams): lsp.SignatureHelp | null {
+        const table = this.symbolTables.get(params.textDocument.uri);
+        const document = this.documents.get(params.textDocument.uri);
+        if (!table || !document) return null;
+        return provideSignatureHelp(table, document.getText(), params.position.line, params.position.character);
     }
 
     definition(_params: lsp.DefinitionParams): lsp.Definition | null {
@@ -194,6 +216,12 @@ export class LspServer {
     private parseAndPublishDiagnostics(uri: string, text: string): void {
         const result = parseJava(text);
         this.parseResults.set(uri, result);
+
+        // Build symbol table if parsing produced a CST
+        if (result.cst) {
+            const table = buildSymbolTable(result.cst);
+            this.symbolTables.set(uri, table);
+        }
 
         const diagnostics = parseErrorsToDiagnostics(result.errors);
         this.lspClient.publishDiagnostics({ uri, diagnostics });
