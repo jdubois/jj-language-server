@@ -1,0 +1,48 @@
+{
+  "name": "jj-language-server",
+  "version": "0.1.0",
+  "description": "Java Language Server implemented in TypeScript/JavaScript (no JVM required)",
+  "author": "jj-language-server contributors",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jj-language-server/jj-language-server.git"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "lib"
+  ],
+  "bin": {
+    "jj-language-server": "./lib/cli.mjs"
+  },
+  "scripts": {
+    "build": "rimraf lib && rollup --config rollup.config.mjs",
+    "dev": "rimraf lib && rollup --config rollup.config.mjs --watch",
+    "clean": "rimraf lib *.tsbuildinfo",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "lint": "eslint src",
+    "fix": "eslint --fix src"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^28.0.0",
+    "@rollup/plugin-node-resolve": "^16.0.0",
+    "@rollup/plugin-terser": "^0.4.0",
+    "@rollup/plugin-typescript": "^12.0.0",
+    "@types/node": "^20.0.0",
+    "commander": "^14.0.0",
+    "eslint": "^9.0.0",
+    "java-parser": "^2.3.2",
+    "rimraf": "^6.0.0",
+    "rollup": "^4.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.0.0",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-protocol": "^3.17.5",
+    "vscode-languageserver-textdocument": "^1.0.12",
+    "vscode-uri": "^3.1.0"
+  }
+}
