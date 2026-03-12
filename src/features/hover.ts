@@ -10,6 +10,7 @@ import lsp from 'vscode-languageserver';
 import type { SymbolTable, JavaSymbol } from '../java/symbol-table.js';
 import { findSymbolAtPosition, resolveSymbolByName } from '../java/scope-resolver.js';
 import { getTokenAtPosition } from './token-utils.js';
+import { getJdkType } from '../project/jdk-model.js';
 import type { CstNode } from 'chevrotain';
 
 /**
@@ -35,9 +36,6 @@ export function provideHover(
         sym = resolveSymbolByName(table, tokenName, line, character);
     }
 
-    if (!sym) return null;
-
-    const contents = formatSymbolHover(sym);
     const range = lsp.Range.create(
         (token.startLine ?? 1) - 1,
         (token.startColumn ?? 1) - 1,
@@ -45,7 +43,28 @@ export function provideHover(
         token.endColumn ?? 0,
     );
 
-    return { contents, range };
+    if (sym) {
+        return { contents: formatSymbolHover(sym), range };
+    }
+
+    // Try JDK types
+    const jdkType = getJdkType(tokenName);
+    if (jdkType) {
+        const typeParams = jdkType.typeParameters ? `<${jdkType.typeParameters.join(', ')}>` : '';
+        const superInfo = jdkType.superclass ? ` extends ${jdkType.superclass}` : '';
+        const ifaceInfo = jdkType.interfaces?.length ? ` implements ${jdkType.interfaces.join(', ')}` : '';
+        const sig = `${jdkType.kind} ${jdkType.name}${typeParams}${superInfo}${ifaceInfo}`;
+        const desc = jdkType.description ? `\n\n${jdkType.description}` : '';
+        return {
+            contents: {
+                kind: lsp.MarkupKind.Markdown,
+                value: `\`\`\`java\n${sig}\n\`\`\`\n\nFrom: \`${jdkType.qualifiedName}\`${desc}`,
+            },
+            range,
+        };
+    }
+
+    return null;
 }
 
 function formatSymbolHover(sym: JavaSymbol): lsp.MarkupContent {

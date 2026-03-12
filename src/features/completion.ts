@@ -9,6 +9,7 @@
 import lsp from 'vscode-languageserver';
 import type { SymbolTable } from '../java/symbol-table.js';
 import { findVisibleSymbols } from '../java/scope-resolver.js';
+import { getAllJdkTypes, type JdkType } from '../project/jdk-model.js';
 
 const JAVA_KEYWORDS = [
     'abstract', 'assert', 'boolean', 'break', 'byte', 'case', 'catch', 'char',
@@ -147,6 +148,19 @@ export function provideCompletions(
         items.push({ ...snippet, sortText: '4_' + snippet.label });
     }
 
+    // Add JDK standard library types
+    for (const jdkType of getAllJdkTypes()) {
+        if (seen.has(jdkType.name)) continue;
+        seen.add(jdkType.name);
+        items.push({
+            label: jdkType.name,
+            kind: jdkTypeToCompletionKind(jdkType),
+            detail: jdkType.qualifiedName,
+            documentation: jdkType.description,
+            sortText: '2_' + jdkType.name,
+        });
+    }
+
     return items;
 }
 
@@ -197,5 +211,15 @@ function getSortPrefix(kind: string): string {
         case 'enum':
         case 'record': return '2_';
         default: return '2_';
+    }
+}
+
+function jdkTypeToCompletionKind(jdkType: JdkType): lsp.CompletionItemKind {
+    switch (jdkType.kind) {
+        case 'class': return lsp.CompletionItemKind.Class;
+        case 'interface': return lsp.CompletionItemKind.Interface;
+        case 'enum': return lsp.CompletionItemKind.Enum;
+        case 'annotation': return lsp.CompletionItemKind.Interface;
+        default: return lsp.CompletionItemKind.Class;
     }
 }
