@@ -22,6 +22,8 @@ import { provideSignatureHelp } from './features/signature-help.js';
 import { provideDefinition, provideReferences, provideDocumentHighlight, provideRename, providePrepareRename } from './features/navigation.js';
 import { provideSelectionRanges } from './features/selection-range.js';
 import { computeSemanticTokens, getSemanticTokensLegend } from './features/semantic-tokens.js';
+import { getTokenAtPosition } from './features/token-utils.js';
+import { WorkspaceIndex } from './project/workspace-index.js';
 
 export interface LspServerOptions {
     logger: Logger;
@@ -34,14 +36,19 @@ export class LspServer {
     private documents: Map<string, TextDocument> = new Map();
     private parseResults: Map<string, ParseResult> = new Map();
     private symbolTables: Map<string, SymbolTable> = new Map();
+    private workspaceIndex: WorkspaceIndex;
 
     constructor(options: LspServerOptions) {
         this.logger = options.logger;
         this.lspClient = options.lspClient;
+        this.workspaceIndex = new WorkspaceIndex(options.logger);
     }
 
+    private rootUri: string | null = null;
+
     initialize(params: lsp.InitializeParams): lsp.InitializeResult {
-        this.logger.info(`jj-language-server initializing for workspace: ${params.rootUri || 'no workspace'}`);
+        this.rootUri = params.rootUri ?? null;
+        this.logger.info(`jj-language-server initializing for workspace: ${this.rootUri || 'no workspace'}`);
 
         return {
             capabilities: {
@@ -67,7 +74,7 @@ export class LspServer {
                 selectionRangeProvider: true,
                 codeActionProvider: false,
                 executeCommandProvider: undefined,
-                workspaceSymbolProvider: false,
+                workspaceSymbolProvider: true,
                 semanticTokensProvider: {
                     legend: getSemanticTokensLegend(),
                     full: true,
@@ -77,8 +84,10 @@ export class LspServer {
         };
     }
 
-    initialized(_params: lsp.InitializedParams): void {
+    async initialized(_params: lsp.InitializedParams): Promise<void> {
         this.logger.info('jj-language-server initialized');
+        // Start workspace indexing in background
+        await this.workspaceIndex.initialize(this.rootUri);
     }
 
     shutdown(): void {
@@ -116,6 +125,7 @@ export class LspServer {
         this.documents.delete(uri);
         this.parseResults.delete(uri);
         this.symbolTables.delete(uri);
+        this.workspaceIndex.removeFile(uri);
         this.lspClient.publishDiagnostics({ uri, diagnostics: [] });
     }
 
@@ -181,7 +191,24 @@ export class LspServer {
         const result = this.parseResults.get(uri);
         const table = this.symbolTables.get(uri);
         if (!result?.cst || !table) return null;
-        return provideDefinition(result.cst, table, uri, params.position.line, params.position.character);
+
+        // Try local file first
+        const localDef = provideDefinition(result.cst, table, uri, params.position.line, params.position.character);
+        if (localDef) return localDef;
+
+        // Try cross-file via workspace index
+        const token = getTokenAtPosition(result.cst, params.position.line, params.position.character);
+        if (token) {
+            const entry = this.workspaceIndex.findTypeByName(token.image);
+            if (entry) {
+                return lsp.Location.create(
+                    entry.uri,
+                    lsp.Range.create(entry.line, entry.column, entry.line, entry.column + entry.name.length),
+                );
+            }
+        }
+
+        return null;
     }
 
     references(params: lsp.ReferenceParams): lsp.Location[] | null {
@@ -189,7 +216,27 @@ export class LspServer {
         const result = this.parseResults.get(uri);
         const table = this.symbolTables.get(uri);
         if (!result?.cst || !table) return null;
-        return provideReferences(result.cst, table, uri, params.position.line, params.position.character);
+
+        // Get local references
+        const localRefs = provideReferences(result.cst, table, uri, params.position.line, params.position.character) ?? [];
+
+        // Find the token at the cursor to get the symbol name
+        const token = getTokenAtPosition(result.cst, params.position.line, params.position.character);
+        if (!token) return localRefs.length > 0 ? localRefs : null;
+
+        // Search other files for references to the same name
+        const allRefs = [...localRefs];
+        for (const fileUri of this.workspaceIndex.getFileUris()) {
+            if (fileUri === uri) continue;
+            const fileResult = this.workspaceIndex.getParseResult(fileUri);
+            const fileTable = this.workspaceIndex.getSymbolTable(fileUri);
+            if (!fileResult?.cst || !fileTable) continue;
+
+            const fileRefs = provideReferences(fileResult.cst, fileTable, fileUri, -1, -1, token.image);
+            if (fileRefs) allRefs.push(...fileRefs);
+        }
+
+        return allRefs.length > 0 ? allRefs : null;
     }
 
     documentHighlight(params: lsp.DocumentHighlightParams): lsp.DocumentHighlight[] | null {
@@ -230,8 +277,29 @@ export class LspServer {
         return null;
     }
 
-    workspaceSymbol(_params: lsp.WorkspaceSymbolParams): lsp.WorkspaceSymbol[] | null {
-        return null;
+    workspaceSymbol(params: lsp.WorkspaceSymbolParams): lsp.WorkspaceSymbol[] | null {
+        const entries = this.workspaceIndex.searchSymbols(params.query);
+        if (entries.length === 0) return null;
+
+        const kindMap: Record<string, lsp.SymbolKind> = {
+            class: lsp.SymbolKind.Class,
+            interface: lsp.SymbolKind.Interface,
+            enum: lsp.SymbolKind.Enum,
+            record: lsp.SymbolKind.Struct,
+            method: lsp.SymbolKind.Method,
+            constructor: lsp.SymbolKind.Constructor,
+            field: lsp.SymbolKind.Field,
+        };
+
+        return entries.map(entry => ({
+            name: entry.name,
+            kind: kindMap[entry.kind] ?? lsp.SymbolKind.Variable,
+            location: lsp.Location.create(
+                entry.uri,
+                lsp.Range.create(entry.line, entry.column, entry.line, entry.column + entry.name.length),
+            ),
+            containerName: entry.containerName,
+        }));
     }
 
     semanticTokensFull(params: lsp.SemanticTokensParams): lsp.SemanticTokens {
@@ -257,6 +325,8 @@ export class LspServer {
         if (result.cst) {
             const table = buildSymbolTable(result.cst);
             this.symbolTables.set(uri, table);
+            // Update workspace index
+            this.workspaceIndex.updateFile(uri, result, table);
         }
 
         const diagnostics = parseErrorsToDiagnostics(result.errors);

@@ -36,6 +36,7 @@ export function provideDefinition(
 
 /**
  * Find all references to the symbol under the cursor within the file.
+ * If searchName is provided, find all references to that name (used for cross-file search).
  */
 export function provideReferences(
     cst: CstNode,
@@ -43,11 +44,17 @@ export function provideReferences(
     uri: string,
     line: number,
     character: number,
+    searchName?: string,
 ): lsp.Location[] {
-    const token = getTokenAtPosition(cst, line, character);
-    if (!token) return [];
+    let name: string;
+    if (searchName) {
+        name = searchName;
+    } else {
+        const token = getTokenAtPosition(cst, line, character);
+        if (!token) return [];
+        name = token.image;
+    }
 
-    const name = token.image;
     const locations: lsp.Location[] = [];
 
     // Find all tokens with this name in the file
