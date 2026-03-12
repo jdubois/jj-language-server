@@ -23,6 +23,12 @@ import { provideDefinition, provideReferences, provideDocumentHighlight, provide
 import { provideSelectionRanges } from './features/selection-range.js';
 import { computeSemanticTokens, getSemanticTokensLegend } from './features/semantic-tokens.js';
 import { getTokenAtPosition } from './features/token-utils.js';
+import { provideCodeActions } from './features/code-actions.js';
+import { organizeImports } from './features/organize-imports.js';
+import { provideInlayHints } from './features/inlay-hints.js';
+import { prepareCallHierarchy, provideIncomingCalls, provideOutgoingCalls } from './features/call-hierarchy.js';
+import { prepareTypeHierarchy, provideSupertypes, provideSubtypes } from './features/type-hierarchy.js';
+import { provideCodeLens } from './features/code-lens.js';
 import { WorkspaceIndex } from './project/workspace-index.js';
 
 export interface LspServerOptions {
@@ -72,7 +78,18 @@ export class LspServer {
                     prepareProvider: true,
                 },
                 selectionRangeProvider: true,
-                codeActionProvider: false,
+                codeActionProvider: {
+                    codeActionKinds: [
+                        lsp.CodeActionKind.QuickFix,
+                        lsp.CodeActionKind.Refactor,
+                        lsp.CodeActionKind.RefactorExtract,
+                        lsp.CodeActionKind.SourceOrganizeImports,
+                    ],
+                },
+                inlayHintProvider: true,
+                callHierarchyProvider: true,
+                typeHierarchyProvider: true,
+                codeLensProvider: { resolveProvider: false },
                 executeCommandProvider: undefined,
                 workspaceSymbolProvider: true,
                 semanticTokensProvider: {
@@ -269,10 +286,6 @@ export class LspServer {
         return provideSelectionRanges(result.cst, params.positions);
     }
 
-    codeAction(_params: lsp.CodeActionParams): lsp.CodeAction[] | null {
-        return null;
-    }
-
     executeCommand(_params: lsp.ExecuteCommandParams): unknown {
         return null;
     }
@@ -313,6 +326,82 @@ export class LspServer {
         const result = this.parseResults.get(params.textDocument.uri);
         if (!result?.cst) return { data: [] };
         return computeSemanticTokens(result.cst);
+    }
+
+    codeAction(params: lsp.CodeActionParams): lsp.CodeAction[] {
+        const uri = params.textDocument.uri;
+        const result = this.parseResults.get(uri);
+        if (!result?.cst) return [];
+        const table = this.symbolTables.get(uri);
+        if (!table) return [];
+        const doc = this.documents.get(uri);
+        if (!doc) return [];
+        return provideCodeActions(result.cst, table, doc.getText(), params.range, params.context.diagnostics);
+    }
+
+    inlayHint(params: lsp.InlayHintParams): lsp.InlayHint[] {
+        const result = this.parseResults.get(params.textDocument.uri);
+        if (!result?.cst) return [];
+        const table = this.symbolTables.get(params.textDocument.uri);
+        if (!table) return [];
+        return provideInlayHints(result.cst, table, params.range);
+    }
+
+    prepareCallHierarchy(params: lsp.CallHierarchyPrepareParams): lsp.CallHierarchyItem[] | null {
+        const uri = params.textDocument.uri;
+        const result = this.parseResults.get(uri);
+        if (!result?.cst) return null;
+        const table = this.symbolTables.get(uri);
+        if (!table) return null;
+        return prepareCallHierarchy(result.cst, table, uri, params.position.line, params.position.character);
+    }
+
+    callHierarchyIncomingCalls(params: lsp.CallHierarchyIncomingCallsParams): lsp.CallHierarchyIncomingCall[] {
+        const uri = params.item.uri;
+        const result = this.parseResults.get(uri);
+        if (!result?.cst) return [];
+        const table = this.symbolTables.get(uri);
+        if (!table) return [];
+        return provideIncomingCalls(result.cst, table, uri, params.item);
+    }
+
+    callHierarchyOutgoingCalls(params: lsp.CallHierarchyOutgoingCallsParams): lsp.CallHierarchyOutgoingCall[] {
+        const uri = params.item.uri;
+        const result = this.parseResults.get(uri);
+        if (!result?.cst) return [];
+        const table = this.symbolTables.get(uri);
+        if (!table) return [];
+        return provideOutgoingCalls(result.cst, table, uri, params.item);
+    }
+
+    prepareTypeHierarchy(params: lsp.TypeHierarchyPrepareParams): lsp.TypeHierarchyItem[] | null {
+        const uri = params.textDocument.uri;
+        const table = this.symbolTables.get(uri);
+        if (!table) return null;
+        return prepareTypeHierarchy(table, uri, params.position.line, params.position.character);
+    }
+
+    typeHierarchySupertypes(params: lsp.TypeHierarchySupertypesParams): lsp.TypeHierarchyItem[] {
+        const uri = params.item.uri;
+        const table = this.symbolTables.get(uri);
+        if (!table) return [];
+        return provideSupertypes(table, uri, params.item);
+    }
+
+    typeHierarchySubtypes(params: lsp.TypeHierarchySubtypesParams): lsp.TypeHierarchyItem[] {
+        const uri = params.item.uri;
+        const table = this.symbolTables.get(uri);
+        if (!table) return [];
+        return provideSubtypes(table, uri, params.item);
+    }
+
+    codeLens(params: lsp.CodeLensParams): lsp.CodeLens[] {
+        const uri = params.textDocument.uri;
+        const result = this.parseResults.get(uri);
+        if (!result?.cst) return [];
+        const table = this.symbolTables.get(uri);
+        if (!table) return [];
+        return provideCodeLens(result.cst, table, uri);
     }
 
     // --- Internal ---

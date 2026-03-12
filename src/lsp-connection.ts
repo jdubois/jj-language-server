@@ -54,5 +54,14 @@ export function createLspConnection(options: LspConnectionOptions): lsp.Connecti
     connection.languages.semanticTokens.on(server.semanticTokensFull.bind(server));
     connection.languages.semanticTokens.onRange(server.semanticTokensRange.bind(server));
 
+    connection.languages.inlayHint.on(server.inlayHint.bind(server));
+    connection.languages.callHierarchy.onPrepare(server.prepareCallHierarchy.bind(server));
+    connection.languages.callHierarchy.onIncomingCalls(server.callHierarchyIncomingCalls.bind(server));
+    connection.languages.callHierarchy.onOutgoingCalls(server.callHierarchyOutgoingCalls.bind(server));
+    connection.languages.typeHierarchy.onPrepare(server.prepareTypeHierarchy.bind(server));
+    connection.languages.typeHierarchy.onSupertypes(server.typeHierarchySupertypes.bind(server));
+    connection.languages.typeHierarchy.onSubtypes(server.typeHierarchySubtypes.bind(server));
+    connection.onCodeLens(server.codeLens.bind(server));
+
     return connection;
 }
