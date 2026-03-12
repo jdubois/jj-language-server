@@ -33,6 +33,10 @@ This is a **Java Language Server implemented in TypeScript** aiming for feature 
 2. **`java/symbol-table.ts`** — Walks the CST to build a `SymbolTable` containing hierarchical `JavaSymbol` objects (classes, methods, fields, variables, etc.)
 3. **`java/scope-resolver.ts`** — Resolves symbols by position and visibility scope, used by features for name resolution
 4. **`java/cst-utils.ts`** — Low-level CST traversal helpers (find first/last token, collect tokens, position utilities)
+5. **`java/import-resolver.ts`** — Builds import maps from CST, resolves type names via imports and `java.lang` auto-imports
+6. **`java/type-resolver.ts`** — Type inference engine: resolves type strings, symbol types, type members, method return types, field types
+7. **`java/expression-type-resolver.ts`** — Expression-level type inference: literals, identifiers, method calls, field access, operators, `this`/`super`, `new`, casts
+8. **`java/javadoc.ts`** — Parses `/** */` Javadoc comments, extracts `@param`/`@return`/`@throws`/`@since`/`@deprecated` tags, renders as Markdown
 
 ### LSP Wiring
 
@@ -90,16 +94,24 @@ The goal is full feature parity with Eclipse JDT Language Server, without requir
 
 ### Current Status
 
-Most LSP capabilities are wired but shallow — the parsing pipeline (java-parser → CST → SymbolTable) works well, but there is no type system, classpath resolution, or dependency analysis yet.
+The project has a full parsing pipeline (java-parser → CST → SymbolTable), a type inference engine, import/expression resolution, Javadoc extraction, and comprehensive semantic diagnostics. 280 tests pass across 23 test files, including 64 integration tests against Spring PetClinic.
 
-**Done:** Document symbols, workspace symbols, document highlight, folding ranges, selection ranges, organize imports.
+**Done:** Document symbols, workspace symbols, document highlight, folding ranges, selection ranges, organize imports, semantic diagnostics (duplicate declarations, unused imports, missing returns, unreachable code, unresolved types, deprecated usage, access control, missing @Override), source generation (constructors, getters/setters, toString, equals/hashCode, override stubs), completion with auto-import and Javadoc, hover with Javadoc, go-to-definition (cross-file), references, rename, semantic tokens (context-aware), code actions, formatting (via Prettier), signature help, inlay hints, call/type hierarchy, go-to-implementation, type definition, import resolution, type inference, expression type resolution, extract method/constant, inline variable, file watcher, workspace configuration.
 
-**Partial:** Completion, hover, diagnostics (syntax only), go-to-definition (cross-file by name), references, rename (single-file), semantic tokens (keywords/literals only), code actions (stubs, no real edits), formatting (via Prettier), signature help, inlay hints, call/type hierarchy (single-file).
+**Remaining gaps:** Full JDK API model (currently ~55 hardcoded types), classpath/dependency resolution (JAR scanning), generics/type parameter inference, annotation processing (Lombok, MapStruct), incremental parsing, multi-root workspace, document links.
 
-### Implementation Phases
+### Completed Phases
 
-1. **Diagnostics** — semantic checks beyond parse errors: unresolved types, duplicate declarations, unused imports, missing return, unreachable code
-2. **Source generation** — code actions that produce real edits: constructors, getters/setters, toString, equals/hashCode, override stubs
-3. **Improve existing features** — real edits for extract variable/surround/add-import, semantic tokens for identifiers, cross-file rename, completion auto-import, on-type formatting
-4. **Navigation** — go-to-implementation, go-to-type-definition, Javadoc extraction, improved cross-file definition
-5. **Type system foundation** — local variable type resolution, expression type inference, import resolution, cross-file type resolution, basic type checking
+1. ✅ **Semantic Diagnostics** — duplicate declarations, unused imports, missing returns, unreachable code, unresolved types
+2. ✅ **Source Generation** — constructors, getters/setters, toString, equals/hashCode, override stubs
+3. ✅ **Enhanced Features** — real code action edits, semantic tokens, cross-file rename, completion auto-import, on-type formatting
+4. ✅ **Navigation** — go-to-implementation, type definition, improved cross-file definition, references fallback
+5. ✅ **Javadoc & Infrastructure** — Javadoc extraction/display, type hierarchy, file watcher, workspace configuration
+6. ✅ **Type System** — import resolution, type resolver, expression type inference, local variable types
+7. ✅ **Advanced Diagnostics** — deprecated usage warnings, unresolved method detection, access control violations, missing @Override hints
+8. ✅ **Refactoring** — extract method, extract constant, inline variable
+
+### Remaining Phases
+
+9. **Classpath & Dependency Resolution** — resolve Maven/Gradle dependencies to local JAR paths, JAR type scanning, source JAR navigation, full JDK API model, annotation processing
+10. **Performance & Polish** — incremental parsing, multi-root workspace, linked editing ranges, document links
