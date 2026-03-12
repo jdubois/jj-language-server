@@ -19,6 +19,9 @@ import { formatDocument, formatRange } from './features/formatting.js';
 import { provideHover } from './features/hover.js';
 import { provideCompletions } from './features/completion.js';
 import { provideSignatureHelp } from './features/signature-help.js';
+import { provideDefinition, provideReferences, provideDocumentHighlight, provideRename, providePrepareRename } from './features/navigation.js';
+import { provideSelectionRanges } from './features/selection-range.js';
+import { computeSemanticTokens, getSemanticTokensLegend } from './features/semantic-tokens.js';
 
 export interface LspServerOptions {
     logger: Logger;
@@ -55,15 +58,21 @@ export class LspServer {
                 signatureHelpProvider: {
                     triggerCharacters: ['(', ','],
                 },
-                definitionProvider: false,
-                referencesProvider: false,
-                documentHighlightProvider: false,
-                renameProvider: false,
-                selectionRangeProvider: false,
+                definitionProvider: true,
+                referencesProvider: true,
+                documentHighlightProvider: true,
+                renameProvider: {
+                    prepareProvider: true,
+                },
+                selectionRangeProvider: true,
                 codeActionProvider: false,
                 executeCommandProvider: undefined,
                 workspaceSymbolProvider: false,
-                semanticTokensProvider: undefined,
+                semanticTokensProvider: {
+                    legend: getSemanticTokensLegend(),
+                    full: true,
+                    range: true,
+                },
             },
         };
     }
@@ -167,28 +176,50 @@ export class LspServer {
         return provideSignatureHelp(table, document.getText(), params.position.line, params.position.character);
     }
 
-    definition(_params: lsp.DefinitionParams): lsp.Definition | null {
-        return null;
+    definition(params: lsp.DefinitionParams): lsp.Definition | null {
+        const { uri } = params.textDocument;
+        const result = this.parseResults.get(uri);
+        const table = this.symbolTables.get(uri);
+        if (!result?.cst || !table) return null;
+        return provideDefinition(result.cst, table, uri, params.position.line, params.position.character);
     }
 
-    references(_params: lsp.ReferenceParams): lsp.Location[] | null {
-        return null;
+    references(params: lsp.ReferenceParams): lsp.Location[] | null {
+        const { uri } = params.textDocument;
+        const result = this.parseResults.get(uri);
+        const table = this.symbolTables.get(uri);
+        if (!result?.cst || !table) return null;
+        return provideReferences(result.cst, table, uri, params.position.line, params.position.character);
     }
 
-    documentHighlight(_params: lsp.DocumentHighlightParams): lsp.DocumentHighlight[] | null {
-        return null;
+    documentHighlight(params: lsp.DocumentHighlightParams): lsp.DocumentHighlight[] | null {
+        const { uri } = params.textDocument;
+        const result = this.parseResults.get(uri);
+        const table = this.symbolTables.get(uri);
+        if (!result?.cst || !table) return null;
+        return provideDocumentHighlight(result.cst, table, params.position.line, params.position.character);
     }
 
-    rename(_params: lsp.RenameParams): lsp.WorkspaceEdit | null {
-        return null;
+    rename(params: lsp.RenameParams): lsp.WorkspaceEdit | null {
+        const { uri } = params.textDocument;
+        const result = this.parseResults.get(uri);
+        const table = this.symbolTables.get(uri);
+        if (!result?.cst || !table) return null;
+        return provideRename(result.cst, table, uri, params.position.line, params.position.character, params.newName);
     }
 
-    prepareRename(_params: lsp.PrepareRenameParams): lsp.Range | null {
-        return null;
+    prepareRename(params: lsp.PrepareRenameParams): lsp.Range | null {
+        const { uri } = params.textDocument;
+        const result = this.parseResults.get(uri);
+        const table = this.symbolTables.get(uri);
+        if (!result?.cst || !table) return null;
+        return providePrepareRename(result.cst, table, params.position.line, params.position.character);
     }
 
-    selectionRanges(_params: lsp.SelectionRangeParams): lsp.SelectionRange[] | null {
-        return null;
+    selectionRanges(params: lsp.SelectionRangeParams): lsp.SelectionRange[] | null {
+        const result = this.parseResults.get(params.textDocument.uri);
+        if (!result?.cst) return null;
+        return provideSelectionRanges(result.cst, params.positions);
     }
 
     codeAction(_params: lsp.CodeActionParams): lsp.CodeAction[] | null {
@@ -203,12 +234,17 @@ export class LspServer {
         return null;
     }
 
-    semanticTokensFull(_params: lsp.SemanticTokensParams): lsp.SemanticTokens {
-        return { data: [] };
+    semanticTokensFull(params: lsp.SemanticTokensParams): lsp.SemanticTokens {
+        const result = this.parseResults.get(params.textDocument.uri);
+        if (!result?.cst) return { data: [] };
+        return computeSemanticTokens(result.cst);
     }
 
-    semanticTokensRange(_params: lsp.SemanticTokensRangeParams): lsp.SemanticTokens {
-        return { data: [] };
+    semanticTokensRange(params: lsp.SemanticTokensRangeParams): lsp.SemanticTokens {
+        // For now, return full tokens (range filtering can be optimized later)
+        const result = this.parseResults.get(params.textDocument.uri);
+        if (!result?.cst) return { data: [] };
+        return computeSemanticTokens(result.cst);
     }
 
     // --- Internal ---
