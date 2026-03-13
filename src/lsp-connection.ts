@@ -69,7 +69,17 @@ export function createLspConnection(options: LspConnectionOptions): lsp.Connecti
     connection.onTypeDefinition(server.typeDefinition.bind(server));
     connection.languages.onLinkedEditingRange(server.linkedEditingRange.bind(server));
     connection.onDocumentLinks(server.documentLinks.bind(server));
-    connection.workspace.onDidChangeWorkspaceFolders(server.didChangeWorkspaceFolders.bind(server));
+
+    // Workspace folder change events require client support; register lazily after
+    // initialize to avoid crashing when the client hasn't advertised the capability.
+    const origInitialize = server.initialize.bind(server);
+    server.initialize = (params: lsp.InitializeParams): lsp.InitializeResult => {
+        const result = origInitialize(params);
+        if (params.capabilities.workspace?.workspaceFolders) {
+            connection.workspace.onDidChangeWorkspaceFolders(server.didChangeWorkspaceFolders.bind(server));
+        }
+        return result;
+    };
 
     return connection;
 }

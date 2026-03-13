@@ -96,6 +96,40 @@ All features are wired into the LSP server and fully functional:
 
 Unlike the [Eclipse JDT Language Server](https://github.com/eclipse-jdtls/eclipse.jdt.ls) which requires a JVM, jj-language-server parses Java source code using [java-parser](https://github.com/jhipster/prettier-java/tree/main/packages/java-parser) (a Chevrotain-based parser written in pure JavaScript) and implements the LSP protocol using [vscode-languageserver](https://github.com/microsoft/vscode-languageserver-node).
 
+## Performance Benchmarks
+
+Benchmarked against Eclipse JDTLS 1.56 on Spring PetClinic (30 Java files), measured via JSON-RPC over stdio:
+
+| Metric | jj-language-server | Eclipse JDTLS |
+|---|---|---|
+| **Startup time** (initialize handshake) | **~280 ms** | ~1,600 ms (5.9× slower) |
+| **Memory after init** (RSS) | **~250 MB** | ~540 MB (2.2× more) |
+| **Memory after loading files** (RSS) | **~350 MB** | ~545 MB (1.6× more) |
+| **Bulk open** (30 files) | **~1,500 ms** | ~5,000 ms (3.3× slower) |
+
+### Operation Latency (avg of 3 runs, largest file)
+
+| Operation | jj-language-server | Eclipse JDTLS | Notes |
+|---|---|---|---|
+| `completion` | **1.1 ms** | 3.3 ms | jj 3× faster |
+| `documentSymbol` | **0.2 ms** | — | JDTLS needs Maven import |
+| `hover` | 2.8 ms | **1.0 ms** | JDTLS faster after warm-up |
+| `references` | **9.8 ms** | — | JDTLS needs Maven import |
+| `formatting` | **6.8 ms** | — | JDTLS needs Maven import |
+| `codeAction` | **1.2 ms** | — | JDTLS needs Maven import |
+| `foldingRange` | **2.1 ms** | — | JDTLS needs Maven import |
+| `semanticTokens` | 6.4 ms | **0.3 ms** | JDTLS faster after warm-up |
+
+> **Key takeaway:** jj-language-server provides **instant results** with no project import step. JDTLS requires Maven/Gradle dependency resolution (often minutes) before most features work. For cold-start scenarios (opening a project for the first time, CI environments, quick edits), jj-language-server is dramatically faster.
+
+Run benchmarks locally:
+
+```bash
+# Download JDTLS, then:
+npm run benchmark        # both servers
+npm run benchmark:jj     # jj-language-server only
+```
+
 ## Development
 
 ### Build

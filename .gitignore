@@ -3,3 +3,5 @@ lib/
 *.tsbuildinfo
 .DS_Store
 test-fixtures/spring-petclinic/
+benchmarks/.jdtls-data/
+test-fixtures/jdtls/
