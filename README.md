@@ -32,6 +32,8 @@ Options:
 
 ### ✅ Fully Implemented
 
+These features are wired into the LSP server and fully functional:
+
 - **Document symbols** — hierarchical: classes, methods, fields, constructors, enums, records, interfaces, annotations
 - **Workspace symbols** — search across all indexed Java files
 - **Code folding** — blocks, methods, imports, comments, annotations
@@ -47,32 +49,43 @@ Options:
 - **Workspace configuration** — settings for formatter, Java version, classpath hints
 - **Import resolution** — resolves `import` statements, maps unqualified names throughout the file
 - **Type inference** — local variable types, expression types (method calls, field access, literals, operators), type resolver for symbols, members, method return types, field types
+- **JDK API model** — 238 built-in JDK types covering core packages (java.lang, java.util, java.io, java.nio, java.net, java.time, java.sql, java.math, java.text, java.util.concurrent, java.util.stream, java.util.function, java.util.regex, java.security)
+- **Hover** — symbol signatures + JDK type info + Javadoc from source comments
+- **Code completion** — scope-aware symbols, JDK types with auto-import, keywords, snippets
+- **Signature help** — parameter hints for methods in scope
+- **Go-to-definition** — local + cross-file via workspace index, import-resolved
+- **Go-to-implementation** — finds subclasses/implementors across workspace
+- **Go-to-type-definition** — navigates to type declaration of a variable
+- **Find references / Document highlight** — finds matching identifiers, cross-file search
+- **Rename** — cross-file rename via workspace index
+- **Semantic tokens** — classifies identifiers via symbol table (20 token types, 10 modifiers)
+- **Code actions** — organize imports, extract variable, extract method, extract constant, inline variable, surround with try-catch, add import for JDK types
+- **Inlay hints** — parameter name hints on method calls
+- **Call hierarchy** — incoming/outgoing calls within file
+
+### 🟡 Implemented (not yet wired into LSP server)
+
+These modules are fully implemented with tests, but not yet integrated into the LSP server handlers. They work as standalone libraries and are ready to be wired in:
+
 - **Classpath resolution** — resolves Maven dependencies via `~/.m2/repository`, Gradle via `~/.gradle/caches`, detects JDK path and version
 - **Java class file reader** — parses `.class` files from JARs to extract type metadata (classes, methods, fields, access flags) without a JVM
-- **Annotation processing** — Lombok support (`@Data`, `@Getter`, `@Setter`, `@Builder`, `@Value`, `@Slf4j`, `@NoArgsConstructor`, `@AllArgsConstructor`, `@RequiredArgsConstructor`) and Spring annotations (`@Component`, `@Service`, `@RestController`, `@GetMapping`, etc.)
-- **Document links** — clickable URLs in comments and strings
-- **Linked editing ranges** — synchronized editing of all occurrences of an identifier
 - **JAR type index** — builds a searchable type index from resolved dependency JARs (ZIP parsing, class extraction, type search)
+- **Annotation processing** — Lombok support (`@Data`, `@Getter`, `@Setter`, `@Builder`, `@Value`, `@Slf4j`, `@NoArgsConstructor`, `@AllArgsConstructor`, `@RequiredArgsConstructor`) and Spring annotations (`@Component`, `@Service`, `@RestController`, `@GetMapping`, etc.)
 - **Document cache** — version-aware caching with debounced reparsing for performance
 - **Multi-root workspace** — supports multiple workspace folders, each with its own index
-- **Expanded JDK API model** — 238 built-in JDK types covering core packages (java.lang, java.util, java.io, java.nio, java.net, java.time, java.sql, java.math, java.text, java.util.concurrent, java.util.stream, java.util.function, java.util.regex, java.security)
+- **Linked editing ranges** — synchronized editing of all occurrences of an identifier
+- **Document links** — clickable URLs in comments and strings
 
-### 🟡 Partially Implemented
+### Known Limitations
 
-These features work but have some remaining limitations:
+These are inherent limitations of the current architecture:
 
-- **Hover** — symbol signatures + JDK type info + Javadoc from source comments (no dependency JAR Javadoc)
-- **Code completion** — scope-aware symbols, JDK types with auto-import, keywords, snippets (no overload resolution)
-- **Signature help** — parameter hints for local methods (no JDK method signatures)
-- **Go-to-definition** — local + cross-file via workspace index, import-resolved (no dependency JAR navigation)
-- **Go-to-implementation** — finds subclasses/implementors in workspace
-- **Go-to-type-definition** — navigates to type declaration of a variable
-- **Find references / Document highlight** — finds matching identifiers (no qualified access like `this.x`)
-- **Rename** — cross-file rename (no type-aware disambiguation)
-- **Semantic tokens** — classifies identifiers via symbol table (no generic type params)
-- **Inlay hints** — parameter name hints on method calls (no inferred type hints for `var`)
-- **Call hierarchy** — incoming/outgoing calls (single-file only)
-- **Code actions** — organize imports, extract variable, extract method, extract constant, inline variable, surround with try-catch, add import
+- No dependency JAR Javadoc in hover (requires wiring JAR index)
+- No completion/navigation into dependency JARs (requires wiring classpath resolver + JAR index)
+- No overload resolution (requires generics support)
+- No generic type parameter classification in semantic tokens
+- No inferred type hints for `var` in inlay hints
+- Call hierarchy is single-file only (no cross-file call graph)
 
 ### ❌ Not Yet Implemented
 
@@ -92,8 +105,8 @@ These features work but have some remaining limitations:
 | 6. Type Resolution | Import resolution, local type inference, expression types, type resolver | ✅ Done |
 | 7. Advanced Diagnostics | Deprecated warnings, unresolved methods, access control, missing @Override | ✅ Done |
 | 8. Advanced Refactoring | Extract method, extract constant, inline variable | ✅ Done |
-| 9. Classpath Resolution | Classpath resolver, class file reader, JDK model, annotation processing | ✅ Done |
-| 10. Performance & Polish | Document cache, multi-root workspace, linked editing, document links | ✅ Done |
+| 9. Classpath Resolution | Classpath resolver, class file reader, JDK model, annotation processing | 🟡 Implemented (not wired) |
+| 10. Performance & Polish | Document cache, multi-root workspace, linked editing, document links | 🟡 Implemented (not wired) |
 
 ## How It Works
 

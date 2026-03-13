@@ -121,8 +121,8 @@ All 10 implementation phases are complete. The project has a full parsing pipeli
 
 ### Remaining Phases
 
-9. ✅ **Classpath & Dependency Resolution** — Maven/Gradle classpath resolution, Java class file reader, expanded JDK model (200+ types), Lombok/Spring annotation processing
-10. ✅ **Performance & Polish** — document cache with debounced reparsing, multi-root workspace, linked editing ranges, document links
+9. 🟡 **Classpath & Dependency Resolution** — Maven/Gradle classpath resolution, Java class file reader, expanded JDK model (238 types), Lombok/Spring annotation processing. *Modules implemented with tests but not yet wired into LSP server.*
+10. 🟡 **Performance & Polish** — document cache with debounced reparsing, multi-root workspace, linked editing ranges, document links. *Modules implemented with tests but not yet wired into LSP server.*
 
 ### Remaining Gaps (not in any phase)
 
