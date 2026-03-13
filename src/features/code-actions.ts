@@ -11,6 +11,8 @@ import type { CstNode, CstElement, IToken } from 'chevrotain';
 import type { SymbolTable } from '../java/symbol-table.js';
 import { getJdkType, getCommonImportableTypes } from '../project/jdk-model.js';
 import { isCstNode } from '../java/cst-utils.js';
+import { organizeImports } from './organize-imports.js';
+import { provideRefactoringActions, createMoveClassAction, createChangeSignatureAction } from './refactoring.js';
 
 /**
  * Provide code actions (quick fixes) for diagnostics and context.
@@ -27,11 +29,13 @@ export function provideCodeActions(
     const lines = text.split('\n');
     const diagnostics = context.diagnostics;
 
-    // Organize imports action (always available)
+    // Organize imports action (always available, with real edits)
+    const organizeEdits = organizeImports(text, uri);
     actions.push({
         title: 'Organize Imports',
         kind: lsp.CodeActionKind.SourceOrganizeImports,
         isPreferred: false,
+        edit: organizeEdits.length > 0 ? { changes: { [uri]: organizeEdits } } : undefined,
     });
 
     // Generate actions from selected text/range
@@ -96,33 +100,9 @@ export function provideCodeActions(
         }
     }
 
-    // Add Move Class action when cursor is on a class declaration
-    const classSym = table.allSymbols.find(s =>
-        (s.kind === 'class' || s.kind === 'interface' || s.kind === 'enum') &&
-        s.line >= range.start.line && s.line <= range.end.line
-    );
-    if (classSym) {
-        actions.push({
-            title: `Move '${classSym.name}' to another package`,
-            kind: lsp.CodeActionKind.Refactor,
-            // This is a "stub" action - the actual move requires user input for the target package
-            // LSP clients will show this as an available refactoring
-            data: { type: 'moveClass', className: classSym.name, uri },
-        });
-    }
-
-    // Add Change Signature action when cursor is on a method declaration
-    const methodSym = table.allSymbols.find(s =>
-        (s.kind === 'method' || s.kind === 'constructor') &&
-        s.line >= range.start.line && s.line <= range.end.line
-    );
-    if (methodSym) {
-        actions.push({
-            title: `Change signature of '${methodSym.name}'`,
-            kind: lsp.CodeActionKind.Refactor,
-            data: { type: 'changeSignature', methodName: methodSym.name, uri },
-        });
-    }
+    // Refactoring actions (extract method, extract constant, inline variable)
+    const refactorActions = provideRefactoringActions(cst, table, text, uri, range);
+    actions.push(...refactorActions);
 
     return actions;
 }
