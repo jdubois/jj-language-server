@@ -1,5 +1,8 @@
 # jj-language-server
 
+> [!WARNING]
+> **Experimental project** — Developed by [Julien Dubois](https://github.com/jdubois). This software is provided "as is", without warranty of any kind, express or implied. See the [Apache-2.0 License](LICENSE) for details.
+
 A Java Language Server implemented in TypeScript/JavaScript — **no JVM required**.
 
 Installable via npm, works with any editor that supports the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/).
