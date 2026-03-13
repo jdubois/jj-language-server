@@ -123,3 +123,65 @@ public class Outer {
         expect(table.allSymbols.find(s => s.name === 'value')).toBeDefined();
     });
 });
+
+describe('type parameters', () => {
+    it('should extract type parameters from generic class', () => {
+        const source = `public class Container<T> {
+    private T value;
+}`;
+        const { cst } = parseJava(source);
+        const table = buildSymbolTable(cst!);
+        const container = table.symbols[0];
+        expect(container.typeParameters).toEqual(['T']);
+    });
+
+    it('should extract multiple type parameters', () => {
+        const source = `public class Pair<K, V> {
+    private K key;
+    private V value;
+}`;
+        const { cst } = parseJava(source);
+        const table = buildSymbolTable(cst!);
+        const pair = table.symbols[0];
+        expect(pair.typeParameters).toEqual(['K', 'V']);
+    });
+
+    it('should extract bounded type parameters', () => {
+        const source = `public class SortedList<T extends Comparable<T>> {
+    private T item;
+}`;
+        const { cst } = parseJava(source);
+        const table = buildSymbolTable(cst!);
+        const sortedList = table.symbols[0];
+        expect(sortedList.typeParameters).toEqual(['T']);
+        expect(sortedList.typeParameterBounds?.T).toContain('Comparable');
+    });
+
+    it('should extract type parameters from generic interface', () => {
+        const source = `public interface Converter<S, T> {
+    T convert(S source);
+}`;
+        const { cst } = parseJava(source);
+        const table = buildSymbolTable(cst!);
+        const converter = table.symbols[0];
+        expect(converter.typeParameters).toEqual(['S', 'T']);
+    });
+
+    it('should extract type parameters from generic method', () => {
+        const source = `public class Util {
+    public <T> T find(T item) { return item; }
+}`;
+        const { cst } = parseJava(source);
+        const table = buildSymbolTable(cst!);
+        const find = table.allSymbols.find(s => s.name === 'find' && s.kind === 'method');
+        expect(find).toBeDefined();
+        expect(find!.typeParameters).toEqual(['T']);
+    });
+
+    it('should not have typeParameters for non-generic class', () => {
+        const source = `public class Simple {}`;
+        const { cst } = parseJava(source);
+        const table = buildSymbolTable(cst!);
+        expect(table.symbols[0].typeParameters).toBeUndefined();
+    });
+});

@@ -527,7 +527,7 @@ export class LspServer {
         if (!result?.cst) return [];
         const table = this.symbolTables.get(uri);
         if (!table) return [];
-        return provideIncomingCalls(result.cst, table, uri, params.item);
+        return provideIncomingCalls(result.cst, table, uri, params.item, this.workspaceIndex);
     }
 
     callHierarchyOutgoingCalls(params: lsp.CallHierarchyOutgoingCallsParams): lsp.CallHierarchyOutgoingCall[] {
@@ -536,7 +536,7 @@ export class LspServer {
         if (!result?.cst) return [];
         const table = this.symbolTables.get(uri);
         if (!table) return [];
-        return provideOutgoingCalls(result.cst, table, uri, params.item);
+        return provideOutgoingCalls(result.cst, table, uri, params.item, this.workspaceIndex);
     }
 
     prepareTypeHierarchy(params: lsp.TypeHierarchyPrepareParams): lsp.TypeHierarchyItem[] | null {

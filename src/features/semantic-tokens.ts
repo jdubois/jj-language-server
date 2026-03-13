@@ -130,6 +130,11 @@ function classifyTokenWithContext(token: IToken, table?: SymbolTable): { type: n
 
         // Uppercase identifier without symbol match - likely a type reference
         if (/^[A-Z]/.test(token.image)) {
+            // Check if this identifier is a type parameter of an enclosing class/method
+            const enclosingTypeParams = findEnclosingTypeParameters(table, line);
+            if (enclosingTypeParams.includes(token.image)) {
+                return { type: 6, modifiers: 0 }; // typeParameter
+            }
             return { type: 1, modifiers: 0 }; // type
         }
     }
@@ -190,4 +195,14 @@ function collectAllTokens(node: CstNode, tokens: IToken[]): void {
             }
         }
     }
+}
+
+function findEnclosingTypeParameters(table: SymbolTable, line: number): string[] {
+    const params: string[] = [];
+    for (const sym of table.allSymbols) {
+        if (sym.typeParameters && sym.line <= line && sym.endLine >= line) {
+            params.push(...sym.typeParameters);
+        }
+    }
+    return params;
 }

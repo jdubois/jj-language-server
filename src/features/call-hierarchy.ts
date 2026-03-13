@@ -11,6 +11,7 @@ import type { CstNode, CstElement, IToken } from 'chevrotain';
 import type { SymbolTable, JavaSymbol } from '../java/symbol-table.js';
 import { isCstNode } from '../java/cst-utils.js';
 import { getTokenAtPosition } from './token-utils.js';
+import type { WorkspaceIndex } from '../project/workspace-index.js';
 
 /**
  * Provide call hierarchy for incoming and outgoing calls.
@@ -47,17 +48,38 @@ export function provideIncomingCalls(
     table: SymbolTable,
     uri: string,
     item: lsp.CallHierarchyItem,
+    workspaceIndex?: WorkspaceIndex,
 ): lsp.CallHierarchyIncomingCall[] {
-    const callerName = item.name;
     const incoming: lsp.CallHierarchyIncomingCall[] = [];
 
-    // Find all methods that call this method
+    // Search current file
+    searchIncomingInFile(cst, table, uri, item.name, incoming);
+
+    // Search cross-file via workspace index
+    if (workspaceIndex) {
+        for (const fileUri of workspaceIndex.getFileUris()) {
+            if (fileUri === uri) continue;
+            const fileResult = workspaceIndex.getParseResult(fileUri);
+            const fileTable = workspaceIndex.getSymbolTable(fileUri);
+            if (!fileResult?.cst || !fileTable) continue;
+            searchIncomingInFile(fileResult.cst, fileTable, fileUri, item.name, incoming);
+        }
+    }
+
+    return incoming;
+}
+
+function searchIncomingInFile(
+    cst: CstNode,
+    table: SymbolTable,
+    uri: string,
+    callerName: string,
+    incoming: lsp.CallHierarchyIncomingCall[],
+): void {
     for (const sym of table.allSymbols) {
         if (sym.kind !== 'method' && sym.kind !== 'constructor') continue;
         if (sym.name === callerName) continue;
 
-        // Check if this method's body contains a reference to callerName
-        // (simplified: check all identifier tokens within the method's range)
         const callSites = findCallSitesInRange(cst, callerName, sym.line, sym.endLine);
         if (callSites.length > 0) {
             incoming.push({
@@ -78,8 +100,6 @@ export function provideIncomingCalls(
             });
         }
     }
-
-    return incoming;
 }
 
 export function provideOutgoingCalls(
@@ -87,15 +107,40 @@ export function provideOutgoingCalls(
     table: SymbolTable,
     uri: string,
     item: lsp.CallHierarchyItem,
+    workspaceIndex?: WorkspaceIndex,
 ): lsp.CallHierarchyOutgoingCall[] {
     const outgoing: lsp.CallHierarchyOutgoingCall[] = [];
+
+    // Search current file
+    searchOutgoingInFile(cst, table, uri, item, outgoing);
+
+    // Search cross-file via workspace index
+    if (workspaceIndex) {
+        for (const fileUri of workspaceIndex.getFileUris()) {
+            if (fileUri === uri) continue;
+            const fileResult = workspaceIndex.getParseResult(fileUri);
+            const fileTable = workspaceIndex.getSymbolTable(fileUri);
+            if (!fileResult?.cst || !fileTable) continue;
+            searchOutgoingInFile(cst, fileTable, fileUri, item, outgoing);
+        }
+    }
+
+    return outgoing;
+}
+
+function searchOutgoingInFile(
+    cst: CstNode,
+    table: SymbolTable,
+    uri: string,
+    item: lsp.CallHierarchyItem,
+    outgoing: lsp.CallHierarchyOutgoingCall[],
+): void {
     const methodNames = new Set(
         table.allSymbols
             .filter(s => s.kind === 'method' || s.kind === 'constructor')
             .map(s => s.name),
     );
 
-    // Find all method calls within the item's range
     const startLine = item.range.start.line;
     const endLine = item.range.end.line;
 
@@ -125,8 +170,6 @@ export function provideOutgoingCalls(
             });
         }
     }
-
-    return outgoing;
 }
 
 function findCallSitesInRange(cst: CstNode, name: string, startLine: number, endLine: number): IToken[] {

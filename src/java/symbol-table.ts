@@ -34,6 +34,10 @@ export interface JavaSymbol {
     superclass?: string;
     /** Implemented/extended interface names */
     interfaces?: string[];
+    /** Generic type parameters, e.g., ["T", "K", "V"] */
+    typeParameters?: string[];
+    /** Bounds for type parameters, e.g., {"T": "extends Comparable<T>"} */
+    typeParameterBounds?: Record<string, string>;
 }
 
 export interface SymbolTable {
@@ -104,6 +108,7 @@ function extractClassSymbol(node: CstNode, parent: string | undefined): JavaSymb
             sym.interfaces = extractTypeNames(classImplements);
         }
         extractClassBodySymbols(normalClass, sym);
+        applyTypeParameters(sym, normalClass);
         return sym;
     }
 
@@ -130,6 +135,7 @@ function extractClassSymbol(node: CstNode, parent: string | undefined): JavaSymb
             ...pos, children: [],
         };
         extractClassBodySymbols(recordDecl, sym);
+        applyTypeParameters(sym, recordDecl);
         return sym;
     }
 
@@ -174,6 +180,7 @@ function extractInterfaceSymbol(node: CstNode, parent: string | undefined): Java
                 }
             }
         }
+        applyTypeParameters(sym, normalInterface);
         return sym;
     }
 
@@ -293,6 +300,9 @@ function extractMethodSymbol(method: CstNode, modifierKey: string, parent: strin
         parameters,
         ...pos, children: [],
     };
+
+    // Extract type parameters from method header (generic methods)
+    applyTypeParameters(sym, actualHeader);
 
     // Extract local variables from method body
     const body = getChild(method, 'methodBody');
@@ -414,6 +424,64 @@ function extractParameters(declarator: CstNode): { type: string; name: string }[
     }
 
     return params;
+}
+
+// --- Type parameter extraction ---
+
+function extractTypeParameters(node: CstNode): { names: string[]; bounds: Record<string, string> } {
+    const names: string[] = [];
+    const bounds: Record<string, string> = {};
+
+    const typeParams = getChild(node, 'typeParameters');
+    if (!typeParams) return { names, bounds };
+
+    const typeParamList = getChild(typeParams, 'typeParameterList');
+    if (!typeParamList) return { names, bounds };
+
+    const typeParamNodes = getChildren(typeParamList, 'typeParameter');
+    for (const tp of typeParamNodes) {
+        const typeId = getChild(tp, 'typeIdentifier');
+        const id = typeId ? getDirectIdentifier(typeId) : getDirectIdentifier(tp);
+        if (!id) continue;
+
+        names.push(id);
+
+        const typeBound = getChild(tp, 'typeBound');
+        if (typeBound) {
+            bounds[id] = extractBoundText(typeBound);
+        }
+    }
+
+    return { names, bounds };
+}
+
+function extractBoundText(node: CstNode): string {
+    const tokens: string[] = [];
+    collectAllTokenTexts(node, tokens);
+    return tokens.join(' ').replace(/\s+([<>,])/g, '$1').replace(/([<>,])\s+/g, '$1');
+}
+
+function collectAllTokenTexts(node: CstNode, tokens: string[]): void {
+    for (const children of Object.values(node.children)) {
+        if (!children) continue;
+        for (const child of children as CstElement[]) {
+            if (isCstNode(child)) {
+                collectAllTokenTexts(child, tokens);
+            } else {
+                tokens.push((child as IToken).image);
+            }
+        }
+    }
+}
+
+function applyTypeParameters(sym: JavaSymbol, sourceNode: CstNode): void {
+    const typeParams = extractTypeParameters(sourceNode);
+    if (typeParams.names.length > 0) {
+        sym.typeParameters = typeParams.names;
+        if (Object.keys(typeParams.bounds).length > 0) {
+            sym.typeParameterBounds = typeParams.bounds;
+        }
+    }
 }
 
 // --- Type text extraction ---

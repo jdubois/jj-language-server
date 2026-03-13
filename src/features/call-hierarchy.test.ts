@@ -69,3 +69,101 @@ describe('call-hierarchy', () => {
         expect(Array.isArray(incoming)).toBe(true);
     });
 });
+
+describe('cross-file call hierarchy', () => {
+    it('should find incoming calls from other files', () => {
+        const sourceA = `public class Service {
+    public void process() {}
+}`;
+        const sourceB = `public class Controller {
+    void handle() {
+        new Service().process();
+    }
+}`;
+        const resultA = parseJava(sourceA);
+        const tableA = buildSymbolTable(resultA.cst!);
+        const resultB = parseJava(sourceB);
+        const tableB = buildSymbolTable(resultB.cst!);
+
+        const mockIndex = {
+            getFileUris: () => ['file:///b.java'],
+            getParseResult: (uri: string) => uri === 'file:///b.java' ? resultB : undefined,
+            getSymbolTable: (uri: string) => uri === 'file:///b.java' ? tableB : undefined,
+        } as any;
+
+        const item: lsp.CallHierarchyItem = {
+            name: 'process',
+            kind: lsp.SymbolKind.Method,
+            uri: 'file:///a.java',
+            range: lsp.Range.create(1, 4, 1, 28),
+            selectionRange: lsp.Range.create(1, 16, 1, 23),
+        };
+
+        const incoming = provideIncomingCalls(resultA.cst!, tableA, 'file:///a.java', item, mockIndex);
+        expect(incoming.length).toBe(1);
+        expect(incoming[0].from.name).toBe('handle');
+        expect(incoming[0].from.uri).toBe('file:///b.java');
+    });
+
+    it('should find outgoing calls in other files', () => {
+        const sourceA = `public class Service {
+    public void process() {
+        helper();
+    }
+}`;
+        const sourceB = `public class Utils {
+    static void helper() {}
+}`;
+        const resultA = parseJava(sourceA);
+        const tableA = buildSymbolTable(resultA.cst!);
+        const resultB = parseJava(sourceB);
+        const tableB = buildSymbolTable(resultB.cst!);
+
+        const mockIndex = {
+            getFileUris: () => ['file:///b.java'],
+            getParseResult: (uri: string) => uri === 'file:///b.java' ? resultB : undefined,
+            getSymbolTable: (uri: string) => uri === 'file:///b.java' ? tableB : undefined,
+        } as any;
+
+        const item: lsp.CallHierarchyItem = {
+            name: 'process',
+            kind: lsp.SymbolKind.Method,
+            uri: 'file:///a.java',
+            range: lsp.Range.create(1, 4, 2, 5),
+            selectionRange: lsp.Range.create(1, 16, 1, 23),
+        };
+
+        const outgoing = provideOutgoingCalls(resultA.cst!, tableA, 'file:///a.java', item, mockIndex);
+        expect(outgoing.some(o => o.to.name === 'helper')).toBe(true);
+        expect(outgoing.find(o => o.to.name === 'helper')?.to.uri).toBe('file:///b.java');
+    });
+
+    it('should not duplicate results from current file', () => {
+        const source = `public class Foo {
+    void bar() { baz(); }
+    void baz() {}
+}`;
+        const result = parseJava(source);
+        const table = buildSymbolTable(result.cst!);
+
+        const mockIndex = {
+            getFileUris: () => ['file:///test.java'],
+            getParseResult: (uri: string) => uri === 'file:///test.java' ? result : undefined,
+            getSymbolTable: (uri: string) => uri === 'file:///test.java' ? table : undefined,
+        } as any;
+
+        const item: lsp.CallHierarchyItem = {
+            name: 'baz',
+            kind: lsp.SymbolKind.Method,
+            uri: 'file:///test.java',
+            range: lsp.Range.create(2, 4, 2, 17),
+            selectionRange: lsp.Range.create(2, 9, 2, 12),
+        };
+
+        // The workspace index contains the same file as uri, so it should be skipped
+        const incoming = provideIncomingCalls(result.cst!, table, 'file:///test.java', item, mockIndex);
+        // Should only find 'bar' calling 'baz' once (from current file), not duplicated
+        const barCallers = incoming.filter(i => i.from.name === 'bar');
+        expect(barCallers.length).toBe(1);
+    });
+});

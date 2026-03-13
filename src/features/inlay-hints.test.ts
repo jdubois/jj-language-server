@@ -44,3 +44,65 @@ describe('inlay-hints', () => {
         }
     });
 });
+
+describe('var type inference hints', () => {
+    it('should show inferred type for var with string literal', () => {
+        const source = `public class Test {
+    void method() {
+        var name = "hello";
+    }
+}`;
+        const hints = getHints(source);
+        const typeHints = hints.filter(h => h.kind === lsp.InlayHintKind.Type);
+        expect(typeHints.length).toBe(1);
+        expect(typeHints[0].label).toContain('String');
+    });
+
+    it('should show inferred type for var with new expression', () => {
+        const source = `import java.util.ArrayList;
+public class Test {
+    void method() {
+        var list = new ArrayList<>();
+    }
+}`;
+        const hints = getHints(source);
+        const typeHints = hints.filter(h => h.kind === lsp.InlayHintKind.Type);
+        expect(typeHints.length).toBe(1);
+        expect(typeHints[0].label).toContain('ArrayList');
+    });
+
+    it('should show inferred type for var with integer literal', () => {
+        const source = `public class Test {
+    void method() {
+        var count = 42;
+    }
+}`;
+        const hints = getHints(source);
+        const typeHints = hints.filter(h => h.kind === lsp.InlayHintKind.Type);
+        expect(typeHints.length).toBe(1);
+        expect(typeHints[0].label).toContain('int');
+    });
+
+    it('should not show type hint for explicitly typed variables', () => {
+        const source = `public class Test {
+    void method() {
+        String name = "hello";
+    }
+}`;
+        const hints = getHints(source);
+        const typeHints = hints.filter(h => h.kind === lsp.InlayHintKind.Type);
+        expect(typeHints.length).toBe(0);
+    });
+
+    it('should show inferred type for var with boolean literal', () => {
+        const source = `public class Test {
+    void method() {
+        var flag = true;
+    }
+}`;
+        const hints = getHints(source);
+        const typeHints = hints.filter(h => h.kind === lsp.InlayHintKind.Type);
+        expect(typeHints.length).toBe(1);
+        expect(typeHints[0].label).toContain('boolean');
+    });
+});

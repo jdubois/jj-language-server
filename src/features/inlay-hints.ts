@@ -11,6 +11,7 @@ import type { CstNode, CstElement, IToken } from 'chevrotain';
 import type { SymbolTable, JavaSymbol } from '../java/symbol-table.js';
 import { isCstNode } from '../java/cst-utils.js';
 import { getTokenAtPosition } from './token-utils.js';
+import { resolveExpressionType, type ExpressionTypeContext } from '../java/expression-type-resolver.js';
 
 /**
  * Provide inlay hints (parameter names, inferred types).
@@ -24,6 +25,9 @@ export function provideInlayHints(
 
     // Find method calls and show parameter names
     collectMethodCallHints(cst, table, range, hints);
+
+    // Show inferred types for var declarations
+    collectVarTypeHints(cst, table, range, hints);
 
     return hints;
 }
@@ -120,6 +124,88 @@ function findArgumentPositions(node: CstNode): IToken[] {
     }
 
     return tokens;
+}
+
+function collectVarTypeHints(
+    node: CstNode,
+    table: SymbolTable,
+    range: lsp.Range,
+    hints: lsp.InlayHint[],
+): void {
+    if (node.name === 'localVariableDeclaration') {
+        if (hasVarType(node)) {
+            const varDeclList = findChildNode(node, 'variableDeclaratorList');
+            if (varDeclList) {
+                const varDecl = findChildNode(varDeclList, 'variableDeclarator');
+                if (varDecl) {
+                    const varId = findChildNode(varDecl, 'variableDeclaratorId');
+                    const identifiers = findChildTokens(varId || varDecl, 'Identifier');
+                    if (identifiers.length > 0) {
+                        const nameToken = identifiers[0];
+                        const line = (nameToken.startLine ?? 1) - 1;
+                        const endCol = nameToken.endColumn ?? 0;
+
+                        if (line >= range.start.line && line <= range.end.line) {
+                            const initializer = findChildNode(varDecl, 'variableInitializer');
+                            if (initializer) {
+                                const exprNode = findChildNode(initializer, 'expression');
+                                if (exprNode) {
+                                    const ctx: ExpressionTypeContext = {
+                                        symbolTable: table,
+                                        line,
+                                        column: (nameToken.startColumn ?? 1) - 1,
+                                    };
+                                    const inferredType = resolveExpressionType(exprNode, ctx);
+                                    if (inferredType) {
+                                        hints.push({
+                                            position: lsp.Position.create(line, endCol),
+                                            label: `: ${inferredType}`,
+                                            kind: lsp.InlayHintKind.Type,
+                                            paddingLeft: false,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for (const children of Object.values(node.children)) {
+        if (!children) continue;
+        for (const child of children as CstElement[]) {
+            if (isCstNode(child)) {
+                collectVarTypeHints(child, table, range, hints);
+            }
+        }
+    }
+}
+
+function hasVarType(node: CstNode): boolean {
+    const localVarType = findChildNode(node, 'localVariableType');
+    if (localVarType) {
+        return hasVarToken(localVarType);
+    }
+    return false;
+}
+
+function hasVarToken(node: CstNode): boolean {
+    for (const children of Object.values(node.children)) {
+        if (!children) continue;
+        for (const child of children as CstElement[]) {
+            if (!isCstNode(child)) {
+                const token = child as IToken;
+                if (token.tokenType?.name === 'Var' || (token.tokenType?.name === 'Identifier' && token.image === 'var')) {
+                    return true;
+                }
+            } else {
+                if (hasVarToken(child)) return true;
+            }
+        }
+    }
+    return false;
 }
 
 function findChildNode(node: CstNode, name: string): CstNode | undefined {
