@@ -8,7 +8,6 @@
 
 import lsp from 'vscode-languageserver';
 import type { SymbolTable, JavaSymbol } from '../java/symbol-table.js';
-import { getJdkType } from '../project/jdk-model.js';
 
 /**
  * Provide source generation code actions for a class at the given range.

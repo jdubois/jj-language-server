@@ -20,7 +20,7 @@ export function prepareTypeHierarchy(
     table: SymbolTable,
     uri: string,
     line: number,
-    character: number,
+    _character: number,
 ): lsp.TypeHierarchyItem[] | null {
     // Find the type at the cursor position
     const sym = table.allSymbols.find(s =>

@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { writeFile, mkdir, rm } from 'node:fs/promises';
+import { writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { deflateRawSync } from 'node:zlib';

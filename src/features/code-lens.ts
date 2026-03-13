@@ -8,7 +8,7 @@
 
 import lsp from 'vscode-languageserver';
 import type { CstNode, CstElement, IToken } from 'chevrotain';
-import type { SymbolTable, JavaSymbol } from '../java/symbol-table.js';
+import type { SymbolTable } from '../java/symbol-table.js';
 import { isCstNode } from '../java/cst-utils.js';
 
 /**
@@ -46,7 +46,6 @@ export function provideCodeLens(
 }
 
 function countReferences(cst: CstNode, name: string): number {
-    let count = 0;
     countRefsRecursive(cst, name, { count: 0 });
     return countRefsRecursiveResult(cst, name);
 }

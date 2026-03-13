@@ -36,7 +36,7 @@ describe('organize-imports', () => {
 
     it('removes duplicate imports', () => {
         const code = 'import java.util.List;\nimport java.util.List;\n\npublic class Foo { List<String> items; }';
-        const edits = organizeImports(code, 'file:///test.java');
+        organizeImports(code, 'file:///test.java');
         // After applying edits, the duplicate should be gone
         const result = applyEdits(code);
         const importLines = result.split('\n').filter(l => l.startsWith('import'));

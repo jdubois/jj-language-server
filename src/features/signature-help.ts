@@ -7,7 +7,7 @@
  */
 
 import lsp from 'vscode-languageserver';
-import type { SymbolTable, JavaSymbol } from '../java/symbol-table.js';
+import type { SymbolTable } from '../java/symbol-table.js';
 import { findVisibleSymbols } from '../java/scope-resolver.js';
 
 /**

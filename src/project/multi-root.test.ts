@@ -8,7 +8,6 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MultiRootWorkspace } from './multi-root.js';
-import { WorkspaceIndex } from './workspace-index.js';
 import type { WorkspaceFolder } from 'vscode-languageserver';
 import type { Logger } from '../utils/logger.js';
 

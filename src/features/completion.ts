@@ -171,7 +171,7 @@ export function provideCompletions(
     }
 
     // Add method/constructor symbols with overload awareness
-    for (const [name, overloads] of methodsByName) {
+    for (const [, overloads] of methodsByName) {
         if (overloads.length === 1) {
             // Single method — add normally
             const sym = overloads[0];

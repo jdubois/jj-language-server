@@ -9,7 +9,6 @@
 import { describe, it, expect } from 'vitest';
 import type { CstNode } from 'chevrotain';
 import { parseJava } from './parser.js';
-import { isCstNode } from './cst-utils.js';
 import type { JavaSymbol } from './symbol-table.js';
 import {
     extractAnnotations,
@@ -18,7 +17,7 @@ import {
     isSpringEndpoint,
     getSpringEndpointInfo,
 } from './annotation-processor.js';
-import type { AnnotationInfo, GeneratedSymbol } from './annotation-processor.js';
+import type { AnnotationInfo } from './annotation-processor.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

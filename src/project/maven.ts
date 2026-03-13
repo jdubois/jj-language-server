@@ -7,7 +7,7 @@
  */
 
 import { readFile } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { join } from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
 import type { Logger } from '../utils/logger.js';
 
@@ -81,7 +81,6 @@ export function parsePomContent(content: string, pomPath: string, logger: Logger
         const javaVersion = extractJavaVersion(project);
 
         // Source directories
-        const basedir = dirname(pomPath);
         const sourceDirectory = project.build?.sourceDirectory ?? 'src/main/java';
         const testSourceDirectory = project.build?.testSourceDirectory ?? 'src/test/java';
 

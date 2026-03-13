@@ -9,7 +9,7 @@
 import lsp from 'vscode-languageserver';
 import type { CstNode } from 'chevrotain';
 import type { SymbolTable, JavaSymbol } from '../java/symbol-table.js';
-import { resolveSymbolByName, findSymbolsByName } from '../java/scope-resolver.js';
+import { resolveSymbolByName } from '../java/scope-resolver.js';
 import { getTokenAtPosition } from './token-utils.js';
 
 /**

@@ -6,7 +6,7 @@
  * You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { prepareTypeHierarchy, provideSupertypes, provideSubtypes } from './type-hierarchy.js';
 import { parseJava } from '../java/parser.js';
 import { buildSymbolTable } from '../java/symbol-table.js';

@@ -11,7 +11,7 @@ import lsp from 'vscode-languageserver';
 /**
  * Organize imports: sort, remove unused, and group imports.
  */
-export function organizeImports(text: string, uri: string): lsp.TextEdit[] {
+export function organizeImports(text: string, _uri: string): lsp.TextEdit[] {
     const lines = text.split('\n');
 
     // Find import block boundaries

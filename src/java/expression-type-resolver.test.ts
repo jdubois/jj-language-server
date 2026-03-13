@@ -27,23 +27,6 @@ function parseAndBuild(code: string) {
 }
 
 /**
- * Walk the CST depth-first looking for the first node named `targetName`.
- */
-function findFirstNode(node: CstNode, targetName: string): CstNode | undefined {
-    if (node.name === targetName) return node;
-    for (const children of Object.values(node.children)) {
-        if (!children) continue;
-        for (const child of children) {
-            if (typeof child === 'object' && 'children' in child) {
-                const found = findFirstNode(child as CstNode, targetName);
-                if (found) return found;
-            }
-        }
-    }
-    return undefined;
-}
-
-/**
  * Find all nodes with a given name in DFS order.
  */
 function findAllNodes(node: CstNode, targetName: string): CstNode[] {

@@ -12,7 +12,7 @@ import type { SymbolTable } from '../java/symbol-table.js';
 import { getJdkType, getCommonImportableTypes } from '../project/jdk-model.js';
 import { isCstNode } from '../java/cst-utils.js';
 import { organizeImports } from './organize-imports.js';
-import { provideRefactoringActions, createMoveClassAction, createChangeSignatureAction } from './refactoring.js';
+import { provideRefactoringActions } from './refactoring.js';
 
 /**
  * Provide code actions (quick fixes) for diagnostics and context.
@@ -23,12 +23,10 @@ export function provideCodeActions(
     text: string,
     uri: string,
     range: lsp.Range,
-    context: { diagnostics: lsp.Diagnostic[] },
+    _context: { diagnostics: lsp.Diagnostic[] },
 ): lsp.CodeAction[] {
     const actions: lsp.CodeAction[] = [];
     const lines = text.split('\n');
-    const diagnostics = context.diagnostics;
-
     // Organize imports action (always available, with real edits)
     const organizeEdits = organizeImports(text, uri);
     actions.push({

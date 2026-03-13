@@ -75,7 +75,7 @@ function handleNewline(lines: string[], position: lsp.Position, indent: string):
     return [];
 }
 
-function handleCloseBrace(lines: string[], position: lsp.Position, indent: string): lsp.TextEdit[] {
+function handleCloseBrace(lines: string[], position: lsp.Position, _indent: string): lsp.TextEdit[] {
     const currentLine = lines[position.line] ?? '';
     const trimmed = currentLine.trim();
 

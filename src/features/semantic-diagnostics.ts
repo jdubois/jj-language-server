@@ -111,7 +111,7 @@ function collectTypeRefsRecursive(node: CstNode, tokens: IToken[], inTypeContext
         name === 'extendsInterfaces' ||
         name === 'classOrInterfaceTypeToInstantiate';
 
-    for (const [key, children] of Object.entries(node.children)) {
+    for (const [, children] of Object.entries(node.children)) {
         if (!children) continue;
         for (const child of children as CstElement[]) {
             if (isCstNode(child)) {
@@ -182,7 +182,6 @@ function checkUnusedImports(cst: CstNode, text: string): lsp.Diagnostic[] {
         if (!line.startsWith('import ')) continue;
         if (line.includes('*;')) continue; // Skip wildcard imports
 
-        const isStatic = line.includes(' static ');
         const name = line
             .replace(/^import\s+/, '')
             .replace(/^static\s+/, '')

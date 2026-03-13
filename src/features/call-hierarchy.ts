@@ -8,7 +8,7 @@
 
 import lsp from 'vscode-languageserver';
 import type { CstNode, CstElement, IToken } from 'chevrotain';
-import type { SymbolTable, JavaSymbol } from '../java/symbol-table.js';
+import type { SymbolTable } from '../java/symbol-table.js';
 import { isCstNode } from '../java/cst-utils.js';
 import { getTokenAtPosition } from './token-utils.js';
 import type { WorkspaceIndex } from '../project/workspace-index.js';

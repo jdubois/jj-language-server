@@ -12,8 +12,6 @@ import { provideSelectionRanges } from './selection-range.js';
 import { computeSemanticTokens } from './semantic-tokens.js';
 import { parseJava } from '../java/parser.js';
 import { buildSymbolTable } from '../java/symbol-table.js';
-import lsp from 'vscode-languageserver';
-
 const TEST_URI = 'file:///test/Test.java';
 
 function setup(code: string) {

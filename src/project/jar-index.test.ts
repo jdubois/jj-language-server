@@ -12,7 +12,6 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { JarIndex, parseZipEntries, extractEntry } from './jar-index.js';
-import type { IndexedType } from './jar-index.js';
 import type { ResolvedDependency } from './classpath-resolver.js';
 import type { Logger } from '../utils/logger.js';
 

@@ -9,7 +9,6 @@
 import type { JavaSymbol, SymbolTable } from './symbol-table.js';
 import type { WorkspaceIndex } from '../project/workspace-index.js';
 import { getJdkType } from '../project/jdk-model.js';
-import type { JdkType, JdkMethod, JdkField } from '../project/jdk-model.js';
 
 // ── Public interfaces ──────────────────────────────────────────────
 

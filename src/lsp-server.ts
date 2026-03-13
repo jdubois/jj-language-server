@@ -26,7 +26,6 @@ import { computeSemanticTokens, getSemanticTokensLegend } from './features/seman
 import { getTokenAtPosition } from './features/token-utils.js';
 import { provideCodeActions } from './features/code-actions.js';
 import { provideSourceGenerationActions } from './features/source-generation.js';
-import { organizeImports } from './features/organize-imports.js';
 import { provideInlayHints } from './features/inlay-hints.js';
 import { prepareCallHierarchy, provideIncomingCalls, provideOutgoingCalls } from './features/call-hierarchy.js';
 import { prepareTypeHierarchy, provideSupertypes, provideSubtypes } from './features/type-hierarchy.js';
@@ -38,7 +37,7 @@ import { provideLinkedEditingRanges } from './features/linked-editing.js';
 import { provideDocumentLinks } from './features/document-links.js';
 import { DocumentCache } from './project/document-cache.js';
 import { MultiRootWorkspace } from './project/multi-root.js';
-import { resolveProjectClasspath, type ResolvedClasspath } from './project/classpath-resolver.js';
+import { resolveProjectClasspath } from './project/classpath-resolver.js';
 import { JarIndex } from './project/jar-index.js';
 import { SourceJarCache } from './project/source-jar.js';
 import { extractAnnotations, processAnnotations } from './java/annotation-processor.js';

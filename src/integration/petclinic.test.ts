@@ -28,7 +28,6 @@ import { provideDefinition, provideReferences, provideDocumentHighlight, provide
 import { computeSemanticTokens } from '../features/semantic-tokens.js';
 import { provideSelectionRanges } from '../features/selection-range.js';
 import { provideCodeActions } from '../features/code-actions.js';
-import { provideSignatureHelp } from '../features/signature-help.js';
 import { WorkspaceIndex } from '../project/workspace-index.js';
 import lsp from 'vscode-languageserver';
 

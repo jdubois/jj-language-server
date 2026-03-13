@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseJava } from './parser.js';
 import { buildSymbolTable } from './symbol-table.js';
-import type { SymbolTable, JavaSymbol } from './symbol-table.js';
+import type { JavaSymbol } from './symbol-table.js';
 import {
     resolveTypeString,
     resolveSymbolType,
@@ -129,7 +129,7 @@ describe('resolveSymbolType', () => {
 describe('findTypeMembers', () => {
     it('should find members for a JDK type (String)', () => {
         const ctx = emptyContext();
-        const { methods, fields } = findTypeMembers('String', ctx);
+        const { methods } = findTypeMembers('String', ctx);
 
         const methodNames = methods.map(m => m.name);
         expect(methodNames).toContain('length');

@@ -284,7 +284,7 @@ export async function resolveProjectClasspath(options: {
     logger?: Logger;
 }): Promise<ResolvedClasspath> {
     const logger = options.logger;
-    let dependencies: ResolvedDependency[] = [];
+    const dependencies: ResolvedDependency[] = [];
     let unresolvedCount = 0;
 
     // ── Maven ──────────────────────────────────────────────────────────
@@ -428,8 +428,8 @@ async function runMavenBuildClasspathViaFile(
  */
 function parseBuildClasspathOutput(
     stdout: string,
-    projectRoot: string,
-    logger?: Logger,
+    _projectRoot: string,
+    _logger?: Logger,
 ): ResolvedDependency[] {
     // The output may contain multiple lines (e.g. multi-module projects).
     // Each relevant line is a classpath string separated by ':' (Unix) or ';' (Windows).
