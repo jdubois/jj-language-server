@@ -184,4 +184,24 @@ describe('WorkspaceIndex', () => {
         expect(result).toBeDefined();
         expect(result!.cst).toBeDefined();
     });
+
+    it('findTypeByName finds record types', () => {
+        indexContent(wi, 'file:///src/Point.java', `
+            public record Point(int x, int y) {}
+        `);
+
+        const result = wi.findTypeByName('Point');
+        expect(result).toBeDefined();
+        expect(result!.name).toBe('Point');
+        expect(result!.kind).toBe('record');
+    });
+
+    it('indexes records in global symbols', () => {
+        indexContent(wi, 'file:///src/Pair.java', `
+            public record Pair(String a, String b) {}
+        `);
+
+        const results = wi.searchSymbols('Pair');
+        expect(results.some(s => s.name === 'Pair' && s.kind === 'record')).toBe(true);
+    });
 });

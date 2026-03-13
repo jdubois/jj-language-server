@@ -154,6 +154,29 @@ public class App {
         expect(pkg).toBeDefined();
     });
 
+    it('should not duplicate characters in package names', () => {
+        const symbols = getSymbols(`
+package com.example.demo;
+
+public class App {
+}
+        `);
+        const pkg = symbols.find(s => s.kind === lsp.SymbolKind.Package);
+        expect(pkg).toBeDefined();
+        expect(pkg!.name).toBe('com.example.demo');
+    });
+
+    it('should extract records with Struct kind and record detail', () => {
+        const symbols = getSymbols(`
+public record Point(int x, int y) {
+}
+        `);
+        const point = findSymbol(symbols, 'Point');
+        expect(point).toBeDefined();
+        expect(point!.kind).toBe(lsp.SymbolKind.Struct);
+        expect(point!.detail).toBe('record');
+    });
+
     it('should handle empty file', () => {
         const symbols = getSymbols('');
         expect(symbols).toHaveLength(0);

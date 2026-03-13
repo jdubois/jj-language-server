@@ -139,7 +139,7 @@ export class WorkspaceIndex {
 
     // --- Internal ---
 
-    private async findJavaFiles(dir: string, maxDepth = 10): Promise<string[]> {
+    private async findJavaFiles(dir: string, maxDepth = 30): Promise<string[]> {
         if (maxDepth <= 0) return [];
         const files: string[] = [];
 

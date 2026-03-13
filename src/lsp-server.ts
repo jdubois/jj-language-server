@@ -88,6 +88,7 @@ export class LspServer {
     private sourceJarCache: SourceJarCache;
     private classpathResolved: boolean = false;
     private settings: JjLanguageServerSettings = { ...DEFAULT_SETTINGS };
+    private initPromise: Promise<void> = Promise.resolve();
 
     constructor(options: LspServerOptions) {
         this.logger = options.logger;
@@ -166,6 +167,11 @@ export class LspServer {
     async initialized(_params: lsp.InitializedParams): Promise<void> {
         this.logger.info('jj-language-server initialized');
 
+        this.initPromise = this.doInitialize();
+        await this.initPromise;
+    }
+
+    private async doInitialize(): Promise<void> {
         // Initialize multi-root workspace alongside single-root index
         if (this.rootUri) {
             await this.multiRoot.initialize([{ uri: this.rootUri, name: 'root' }]);
@@ -453,7 +459,8 @@ export class LspServer {
         return provideTypeDefinition(result.cst, table, uri, params.position.line, params.position.character, this.workspaceIndex);
     }
 
-    references(params: lsp.ReferenceParams): lsp.Location[] | null {
+    async references(params: lsp.ReferenceParams): Promise<lsp.Location[] | null> {
+        await this.initPromise;
         const { uri } = params.textDocument;
         const result = this.parseResults.get(uri);
         const table = this.symbolTables.get(uri);
@@ -541,7 +548,8 @@ export class LspServer {
         return null;
     }
 
-    workspaceSymbol(params: lsp.WorkspaceSymbolParams): lsp.WorkspaceSymbol[] | null {
+    async workspaceSymbol(params: lsp.WorkspaceSymbolParams): Promise<lsp.WorkspaceSymbol[] | null> {
+        await this.initPromise;
         const entries = this.workspaceIndex.searchSymbols(params.query);
         if (entries.length === 0) return null;
 
@@ -555,15 +563,21 @@ export class LspServer {
             field: lsp.SymbolKind.Field,
         };
 
-        return entries.map(entry => ({
-            name: entry.name,
-            kind: kindMap[entry.kind] ?? lsp.SymbolKind.Variable,
-            location: lsp.Location.create(
-                entry.uri,
-                lsp.Range.create(entry.line, entry.column, entry.line, entry.column + entry.name.length),
-            ),
-            containerName: entry.containerName,
-        }));
+        return entries.map(entry => {
+            const sym: lsp.WorkspaceSymbol = {
+                name: entry.name,
+                kind: kindMap[entry.kind] ?? lsp.SymbolKind.Variable,
+                location: lsp.Location.create(
+                    entry.uri,
+                    lsp.Range.create(entry.line, entry.column, entry.line, entry.column + entry.name.length),
+                ),
+                containerName: entry.containerName,
+            };
+            if (entry.kind === 'record') {
+                sym.containerName = sym.containerName ? `${sym.containerName} (record)` : 'record';
+            }
+            return sym;
+        });
     }
 
     semanticTokensFull(params: lsp.SemanticTokensParams): lsp.SemanticTokens {
@@ -611,7 +625,8 @@ export class LspServer {
         return prepareCallHierarchy(result.cst, table, uri, params.position.line, params.position.character);
     }
 
-    callHierarchyIncomingCalls(params: lsp.CallHierarchyIncomingCallsParams): lsp.CallHierarchyIncomingCall[] {
+    async callHierarchyIncomingCalls(params: lsp.CallHierarchyIncomingCallsParams): Promise<lsp.CallHierarchyIncomingCall[]> {
+        await this.initPromise;
         const uri = params.item.uri;
         const result = this.parseResults.get(uri);
         if (!result?.cst) return [];
@@ -620,7 +635,8 @@ export class LspServer {
         return provideIncomingCalls(result.cst, table, uri, params.item, this.workspaceIndex);
     }
 
-    callHierarchyOutgoingCalls(params: lsp.CallHierarchyOutgoingCallsParams): lsp.CallHierarchyOutgoingCall[] {
+    async callHierarchyOutgoingCalls(params: lsp.CallHierarchyOutgoingCallsParams): Promise<lsp.CallHierarchyOutgoingCall[]> {
+        await this.initPromise;
         const uri = params.item.uri;
         const result = this.parseResults.get(uri);
         if (!result?.cst) return [];

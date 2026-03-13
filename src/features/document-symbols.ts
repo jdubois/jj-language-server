@@ -63,6 +63,7 @@ function extractClassDeclaration(node: CstNode): lsp.DocumentSymbol | null {
         const name = getIdentifierName(recordDecl);
         if (!name) return null;
         const symbol = createSymbol(name, lsp.SymbolKind.Struct, recordDecl);
+        symbol.detail = 'record';
         symbol.children = extractClassBodyMembers(recordDecl);
         return symbol;
     }
@@ -292,11 +293,6 @@ function collectIdentifierTokens(node: CstNode, tokens: IToken[]): void {
             }
         }
     }
-    // Also get direct Identifier and Dot tokens
-    const ids = node.children['Identifier'] as IToken[] | undefined;
-    if (ids) tokens.push(...ids);
-    const dots = node.children['Dot'] as IToken[] | undefined;
-    if (dots) tokens.push(...dots);
 }
 
 // --- CST navigation helpers ---

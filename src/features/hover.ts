@@ -34,7 +34,12 @@ export function provideHover(
 
     // If the token is an identifier and doesn't match the positional symbol, resolve by name
     if (!sym || (sym.name !== tokenName && token.tokenType?.name === 'Identifier')) {
-        sym = resolveSymbolByName(table, tokenName, line, character);
+        sym = resolveSymbolByName(table, tokenName, line, character)
+            ?? table.allSymbols.find(s => s.name === tokenName);
+    }
+
+    if (!sym) {
+        sym = table.allSymbols.find(s => s.name === tokenName);
     }
 
     const startLine = Number.isFinite(token.startLine) ? token.startLine! - 1 : 0;
