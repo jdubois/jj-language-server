@@ -19,6 +19,8 @@ npm install -g jj-language-server
 jj-language-server --stdio
 ```
 
+See the **[LSP Configuration Guide](LSP-CONFIGURATION.md)** for detailed setup instructions for VS Code, Neovim, Sublime Text, Emacs, Helix, and GitHub Copilot CLI (Windows/macOS/Linux).
+
 ## CLI Options
 
 ```
