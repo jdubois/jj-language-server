@@ -7,7 +7,7 @@ This guide explains how to configure **jj-language-server** as your Java languag
 Install jj-language-server globally:
 
 ```bash
-npm install -g @jdubois/jj-language-server
+npm install -g jj-language-server
 ```
 
 Verify the installation:
@@ -181,7 +181,7 @@ gh extension install github/gh-copilot
 2. Install jj-language-server:
 
 ```bash
-npm install -g @jdubois/jj-language-server
+npm install -g jj-language-server
 ```
 
 3. The GitHub Copilot CLI will automatically discover language servers configured in your editor. If you use VS Code with jj-language-server configured (see above), Copilot CLI will benefit from it when working within a VS Code terminal.
@@ -224,7 +224,7 @@ jj-language-server --stdio --log-level 4
   ```
 - Or use the full path to Node.js:
   ```
-  node C:\Users\<user>\AppData\Roaming\npm\node_modules\@jdubois\jj-language-server\lib\cli.mjs --stdio
+  node C:\Users\<user>\AppData\Roaming\npm\node_modules\jj-language-server\lib\cli.mjs --stdio
   ```
 
 ### macOS

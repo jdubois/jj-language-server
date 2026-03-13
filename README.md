@@ -10,7 +10,7 @@ Installable via npm, works with any editor that supports the [Language Server Pr
 ## Installing
 
 ```sh
-npm install -g @jdubois/jj-language-server
+npm install -g jj-language-server
 ```
 
 ## Running

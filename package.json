@@ -1,15 +1,12 @@
 {
-  "name": "@jdubois/jj-language-server",
-  "version": "0.1.0",
+  "name": "jj-language-server",
+  "version": "0.2.0",
   "description": "Java Language Server implemented in TypeScript/JavaScript (no JVM required)",
   "author": "Julien Dubois",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/jdubois/jj-language-server.git"
-  },
-  "publishConfig": {
-    "access": "public"
   },
   "type": "module",
   "engines": {
