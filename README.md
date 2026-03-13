@@ -47,28 +47,28 @@ Benchmarked against Eclipse JDTLS 1.56 on Spring PetClinic (30 Java files), meas
 
 | Metric | jj (Node.js) | jj (Bun) | Eclipse JDTLS |
 |---|---|---|---|
-| **Startup time** | **~295 ms** | ~2,200 ms | ~2,350 ms (8×) |
-| **Memory after init** (RSS) | 220 MB | **202 MB** | 2,427 MB |
-| **Memory final** (RSS) | 345 MB | **254 MB** | 2,516 MB |
+| **Startup time** | **~274 ms** | ~1,637 ms | ~2,390 ms (9×) |
+| **Memory after init** (RSS) | 222 MB | **207 MB** | 2,434 MB |
+| **Memory final** (RSS) | 339 MB | **257 MB** | 2,528 MB |
 | **Bulk open** (30 files) | **~1,500 ms** | ~1,500 ms | ~5,000 ms |
 
 ### Operation Latency (avg of 3 runs, largest file)
 
 | Operation | jj (Node.js) | jj (Bun) | Eclipse JDTLS |
 |---|---|---|---|
-| `hover` | 3.2 ms | 2.2 ms | **1.9 ms** |
-| `completion` | **1.2 ms** | 3.9 ms | 36.1 ms |
-| `documentSymbol` | **0.6 ms** | 1.3 ms | 1.1 ms |
-| `definition` | 1.5 ms (∅) | 2.1 ms (∅) | 1.5 ms (∅) |
-| `references` | 11 ms | **5.2 ms** | 42.1 ms |
-| `formatting` | 7.5 ms | 24.3 ms | **7 ms** |
-| `codeAction` | **1.3 ms** | **1.3 ms** | 31.6 ms (∅) |
-| `foldingRange` | 1.2 ms | 2.0 ms | **1.1 ms** |
-| `semanticTokens` | 2.9 ms | 3.3 ms | **1.5 ms** |
+| `hover` | 1.9 ms | **0.8 ms** | 2.1 ms |
+| `completion` | 1.3 ms | **0.8 ms** | 27.1 ms |
+| `documentSymbol` | **0.3 ms** | 0.4 ms | 1.1 ms |
+| `definition` | 1.8 ms (∅) | 0.7 ms (∅) | 1.6 ms (∅) |
+| `references` | 10.9 ms | **3.9 ms** | 41.4 ms |
+| `formatting` | **7.1 ms** | 11 ms | 7.6 ms |
+| `codeAction` | **1.2 ms** | 1.5 ms | 28.8 ms (∅) |
+| `foldingRange` | 1 ms | **0.7 ms** | 1.3 ms |
+| `semanticTokens` | 3.7 ms | 3.7 ms | **3 ms** |
 
 > (∅) = response was null or empty (not yet supported for cross-file definition)
 
-> **Key takeaway:** jj-language-server is **30× faster** at completion and **8× faster** at references than JDTLS, while using **7× less memory** (~345 MB vs ~2.5 GB). Bun offers the lowest memory footprint (254 MB final). JDTLS excels at semantic tokens and folding ranges thanks to full type resolution. For cold-start scenarios (opening a project for the first time, CI environments, quick edits), jj-language-server is dramatically faster.
+> **Key takeaway:** jj-language-server is **21× faster** at completion and **10× faster** at references than JDTLS, while using **7× less memory** (~339 MB vs ~2.5 GB). Bun offers the lowest memory footprint (257 MB) and fastest per-operation latency. For cold-start scenarios (CI, quick edits), jj starts in under 300 ms on Node.js — 9× faster than JDTLS.
 
 Run benchmarks locally:
 
