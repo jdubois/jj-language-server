@@ -1,6 +1,6 @@
 # LSP Configuration Guide
 
-This guide explains how to configure **jj-language-server** as your Java language server in various editors and tools.
+This guide explains how to configure **jj-language-server** as your Java language server.
 
 ## Prerequisites
 
@@ -17,6 +17,36 @@ jj-language-server --version
 ```
 
 The server communicates over **stdio** using the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/).
+
+---
+
+## GitHub Copilot CLI
+
+[GitHub Copilot CLI](https://docs.github.com/en/copilot/using-github-copilot/using-github-copilot-in-the-command-line) can leverage language servers for enhanced code understanding.
+
+### Setup
+
+1. Ensure GitHub Copilot CLI is installed:
+
+```bash
+gh extension install github/gh-copilot
+```
+
+2. Install jj-language-server:
+
+```bash
+npm install -g jj-language-server
+```
+
+3. The GitHub Copilot CLI will automatically discover language servers configured in your editor. If you use VS Code with jj-language-server configured (see below), Copilot CLI will benefit from it when working within a VS Code terminal.
+
+### What It Provides
+
+When using GitHub Copilot CLI in a Java project directory, the server provides:
+
+- **Completions and suggestions** — informed by your project's Java symbols
+- **Code navigation context** — understanding of class hierarchies, imports, and references
+- **Diagnostics** — real-time error detection without waiting for a JVM to start
 
 ---
 
@@ -49,135 +79,6 @@ Open your VS Code settings (`Ctrl+Shift+P` / `Cmd+Shift+P` → "Preferences: Ope
 ```
 
 > **Troubleshooting:** Check the output panel (`View` → `Output`) and select "Generic LSP Client" from the dropdown to see server logs. If you get `ENOENT`, use the full path from `which jj-language-server`.
-
----
-
-## Neovim
-
-### Using nvim-lspconfig
-
-Add to your Neovim configuration (e.g., `~/.config/nvim/init.lua`):
-
-```lua
-local lspconfig = require('lspconfig')
-local configs = require('lspconfig.configs')
-
--- Register jj-language-server as a custom LSP
-if not configs.jj_ls then
-  configs.jj_ls = {
-    default_config = {
-      cmd = { 'jj-language-server', '--stdio' },
-      filetypes = { 'java' },
-      root_dir = lspconfig.util.root_pattern('pom.xml', 'build.gradle', 'build.gradle.kts', '.git'),
-      settings = {},
-    },
-  }
-end
-
-lspconfig.jj_ls.setup {}
-```
-
-### Using Mason (optional)
-
-If you use [mason.nvim](https://github.com/williamboman/mason.nvim), you can install jj-language-server via npm and configure it manually as shown above.
-
----
-
-## Sublime Text
-
-### Using LSP Package
-
-1. Install [LSP](https://packagecontrol.io/packages/LSP) via Package Control.
-
-2. Open **Preferences → Package Settings → LSP → Settings** and add:
-
-```json
-{
-  "clients": {
-    "jj-language-server": {
-      "enabled": true,
-      "command": ["jj-language-server", "--stdio"],
-      "selector": "source.java",
-      "schemes": ["file"]
-    }
-  }
-}
-```
-
----
-
-## Emacs
-
-### Using lsp-mode
-
-Add to your Emacs configuration:
-
-```elisp
-(require 'lsp-mode)
-
-(lsp-register-client
- (make-lsp-client
-  :new-connection (lsp-stdio-connection '("jj-language-server" "--stdio"))
-  :activation-fn (lsp-activate-on "java")
-  :server-id 'jj-ls))
-
-(add-hook 'java-mode-hook #'lsp)
-```
-
-### Using eglot (built-in since Emacs 29)
-
-```elisp
-(add-to-list 'eglot-server-programs
-             '(java-mode . ("jj-language-server" "--stdio")))
-
-(add-hook 'java-mode-hook 'eglot-ensure)
-```
-
----
-
-## Helix
-
-Add to `~/.config/helix/languages.toml`:
-
-```toml
-[[language]]
-name = "java"
-language-servers = ["jj-language-server"]
-
-[language-server.jj-language-server]
-command = "jj-language-server"
-args = ["--stdio"]
-```
-
----
-
-## GitHub Copilot CLI
-
-GitHub Copilot CLI can leverage language servers for enhanced code understanding. To configure jj-language-server:
-
-### Setup
-
-1. Ensure [GitHub Copilot CLI](https://docs.github.com/en/copilot/using-github-copilot/using-github-copilot-in-the-command-line) is installed:
-
-```bash
-gh extension install github/gh-copilot
-```
-
-2. Install jj-language-server:
-
-```bash
-npm install -g jj-language-server
-```
-
-3. The GitHub Copilot CLI will automatically discover language servers configured in your editor. If you use VS Code with jj-language-server configured (see above), Copilot CLI will benefit from it when working within a VS Code terminal.
-
-### Direct Usage
-
-When using GitHub Copilot CLI in a Java project directory, the server provides:
-
-- **Completions and suggestions** — informed by your project's Java symbols
-- **Code navigation context** — understanding of class hierarchies, imports, and references
-- **Diagnostics** — real-time error detection without waiting for a JVM to start
 
 ---
 
