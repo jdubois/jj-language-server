@@ -32,7 +32,7 @@ Options:
 
 ### ✅ Fully Implemented
 
-These features are wired into the LSP server and fully functional:
+All features are wired into the LSP server and fully functional:
 
 - **Document symbols** — hierarchical: classes, methods, fields, constructors, enums, records, interfaces, annotations
 - **Workspace symbols** — search across all indexed Java files
@@ -62,26 +62,17 @@ These features are wired into the LSP server and fully functional:
 - **Code actions** — organize imports, extract variable, extract method, extract constant, inline variable, surround with try-catch, add import for JDK types
 - **Inlay hints** — parameter name hints on method calls
 - **Call hierarchy** — incoming/outgoing calls within file
-
-### 🟡 Implemented (not yet wired into LSP server)
-
-These modules are fully implemented with tests, but not yet integrated into the LSP server handlers. They work as standalone libraries and are ready to be wired in:
-
-- **Classpath resolution** — resolves Maven dependencies via `~/.m2/repository`, Gradle via `~/.gradle/caches`, detects JDK path and version
+- **Classpath resolution** — resolves Maven dependencies via `~/.m2/repository`, Gradle via `~/.gradle/caches`, detects JDK path and version; auto-resolves on workspace init
 - **Java class file reader** — parses `.class` files from JARs to extract type metadata (classes, methods, fields, access flags) without a JVM
 - **JAR type index** — builds a searchable type index from resolved dependency JARs (ZIP parsing, class extraction, type search)
-- **Annotation processing** — Lombok support (`@Data`, `@Getter`, `@Setter`, `@Builder`, `@Value`, `@Slf4j`, `@NoArgsConstructor`, `@AllArgsConstructor`, `@RequiredArgsConstructor`) and Spring annotations (`@Component`, `@Service`, `@RestController`, `@GetMapping`, etc.)
+- **Annotation processing** — Lombok support (`@Data`, `@Getter`, `@Setter`, `@Builder`, `@Value`, `@Slf4j`, `@NoArgsConstructor`, `@AllArgsConstructor`, `@RequiredArgsConstructor`) and Spring annotations (`@Component`, `@Service`, `@RestController`, `@GetMapping`, etc.); integrated into symbol table
 - **Document cache** — version-aware caching with debounced reparsing for performance
-- **Multi-root workspace** — supports multiple workspace folders, each with its own index
+- **Multi-root workspace** — supports multiple workspace folders, each with its own index; handles `workspace/didChangeWorkspaceFolders`
 - **Linked editing ranges** — synchronized editing of all occurrences of an identifier
 - **Document links** — clickable URLs in comments and strings
 
 ### Known Limitations
 
-These are inherent limitations of the current architecture:
-
-- No dependency JAR Javadoc in hover (requires wiring JAR index)
-- No completion/navigation into dependency JARs (requires wiring classpath resolver + JAR index)
 - No overload resolution (requires generics support)
 - No generic type parameter classification in semantic tokens
 - No inferred type hints for `var` in inlay hints
@@ -105,8 +96,8 @@ These are inherent limitations of the current architecture:
 | 6. Type Resolution | Import resolution, local type inference, expression types, type resolver | ✅ Done |
 | 7. Advanced Diagnostics | Deprecated warnings, unresolved methods, access control, missing @Override | ✅ Done |
 | 8. Advanced Refactoring | Extract method, extract constant, inline variable | ✅ Done |
-| 9. Classpath Resolution | Classpath resolver, class file reader, JDK model, annotation processing | 🟡 Implemented (not wired) |
-| 10. Performance & Polish | Document cache, multi-root workspace, linked editing, document links | 🟡 Implemented (not wired) |
+| 9. Classpath Resolution | Classpath resolver, class file reader, JDK model, annotation processing | ✅ Done |
+| 10. Performance & Polish | Document cache, multi-root workspace, linked editing, document links | ✅ Done |
 
 ## How It Works
 
@@ -127,7 +118,7 @@ npm run build
 npm test
 ```
 
-There are **443 tests** across 31 test files. Integration tests use the [Spring PetClinic](https://github.com/spring-projects/spring-petclinic) project as a realistic fixture. The pinned commit is tracked in `test-fixtures/spring-petclinic-sha.txt`.
+There are **451 tests** across 32 test files. Integration tests use the [Spring PetClinic](https://github.com/spring-projects/spring-petclinic) project as a realistic fixture. The pinned commit is tracked in `test-fixtures/spring-petclinic-sha.txt`.
 
 ### CI / CD
 

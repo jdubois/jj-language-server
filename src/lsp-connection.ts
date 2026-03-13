@@ -65,6 +65,9 @@ export function createLspConnection(options: LspConnectionOptions): lsp.Connecti
     connection.languages.typeHierarchy.onSupertypes(server.typeHierarchySupertypes.bind(server));
     connection.languages.typeHierarchy.onSubtypes(server.typeHierarchySubtypes.bind(server));
     connection.onCodeLens(server.codeLens.bind(server));
+    connection.languages.onLinkedEditingRange(server.linkedEditingRange.bind(server));
+    connection.onDocumentLinks(server.documentLinks.bind(server));
+    connection.workspace.onDidChangeWorkspaceFolders(server.didChangeWorkspaceFolders.bind(server));
 
     return connection;
 }

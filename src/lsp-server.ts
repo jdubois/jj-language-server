@@ -34,6 +34,15 @@ import { provideCodeLens } from './features/code-lens.js';
 import { provideOnTypeFormatting } from './features/on-type-formatting.js';
 import { WorkspaceIndex } from './project/workspace-index.js';
 import { findJavadocComments } from './java/javadoc.js';
+import { provideLinkedEditingRanges } from './features/linked-editing.js';
+import { provideDocumentLinks } from './features/document-links.js';
+import { DocumentCache } from './project/document-cache.js';
+import { MultiRootWorkspace } from './project/multi-root.js';
+import { resolveProjectClasspath, type ResolvedClasspath } from './project/classpath-resolver.js';
+import { JarIndex } from './project/jar-index.js';
+import { extractAnnotations, processAnnotations } from './java/annotation-processor.js';
+import { parsePomXml } from './project/maven.js';
+import { parseGradleBuild } from './project/gradle.js';
 
 export interface JjLanguageServerSettings {
     java: {
@@ -73,12 +82,18 @@ export class LspServer {
     private parseResults: Map<string, ParseResult> = new Map();
     private symbolTables: Map<string, SymbolTable> = new Map();
     private workspaceIndex: WorkspaceIndex;
+    private documentCache: DocumentCache = new DocumentCache();
+    private multiRoot: MultiRootWorkspace;
+    private jarIndex: JarIndex;
+    private classpathResolved: boolean = false;
     private settings: JjLanguageServerSettings = { ...DEFAULT_SETTINGS };
 
     constructor(options: LspServerOptions) {
         this.logger = options.logger;
         this.lspClient = options.lspClient;
         this.workspaceIndex = new WorkspaceIndex(options.logger);
+        this.multiRoot = new MultiRootWorkspace(options.logger);
+        this.jarIndex = new JarIndex(options.logger);
     }
 
     private rootUri: string | null = null;
@@ -127,6 +142,8 @@ export class LspServer {
                 callHierarchyProvider: true,
                 typeHierarchyProvider: true,
                 codeLensProvider: { resolveProvider: false },
+                linkedEditingRangeProvider: true,
+                documentLinkProvider: { resolveProvider: false },
                 executeCommandProvider: undefined,
                 workspaceSymbolProvider: true,
                 semanticTokensProvider: {
@@ -137,6 +154,7 @@ export class LspServer {
                 workspace: {
                     workspaceFolders: {
                         supported: true,
+                        changeNotifications: true,
                     },
                 },
             },
@@ -145,8 +163,16 @@ export class LspServer {
 
     async initialized(_params: lsp.InitializedParams): Promise<void> {
         this.logger.info('jj-language-server initialized');
-        // Start workspace indexing in background
+
+        // Initialize multi-root workspace alongside single-root index
+        if (this.rootUri) {
+            await this.multiRoot.initialize([{ uri: this.rootUri, name: 'root' }]);
+        }
+        // Keep single workspaceIndex for backward compatibility
         await this.workspaceIndex.initialize(this.rootUri);
+
+        // Resolve classpath in background (non-blocking)
+        this.resolveClasspath().catch(e => this.logger.warn(`Classpath resolution failed: ${e}`));
     }
 
     shutdown(): void {
@@ -154,6 +180,7 @@ export class LspServer {
         this.documents.clear();
         this.parseResults.clear();
         this.symbolTables.clear();
+        this.documentCache.clear();
     }
 
     // --- Text Document Synchronization ---
@@ -184,6 +211,7 @@ export class LspServer {
         this.documents.delete(uri);
         this.parseResults.delete(uri);
         this.symbolTables.delete(uri);
+        this.documentCache.remove(uri);
         this.workspaceIndex.removeFile(uri);
         this.lspClient.publishDiagnostics({ uri, diagnostics: [] });
     }
@@ -541,6 +569,30 @@ export class LspServer {
         return provideCodeLens(result.cst, table, uri);
     }
 
+    linkedEditingRange(params: lsp.LinkedEditingRangeParams): lsp.LinkedEditingRanges | null {
+        const { uri } = params.textDocument;
+        const result = this.parseResults.get(uri);
+        const table = this.symbolTables.get(uri);
+        const document = this.documents.get(uri);
+        if (!result || !table || !document) return null;
+        return provideLinkedEditingRanges(result, table, document.getText(), params.position.line, params.position.character);
+    }
+
+    documentLinks(params: lsp.DocumentLinkParams): lsp.DocumentLink[] {
+        const document = this.documents.get(params.textDocument.uri);
+        if (!document) return [];
+        return provideDocumentLinks(document.getText());
+    }
+
+    didChangeWorkspaceFolders(event: lsp.WorkspaceFoldersChangeEvent): void {
+        for (const added of event.added) {
+            this.multiRoot.addFolder(added).catch(e => this.logger.warn(`Failed to add folder: ${e}`));
+        }
+        for (const removed of event.removed) {
+            this.multiRoot.removeFolder(removed.uri);
+        }
+    }
+
     // --- Internal ---
 
     private async reindexFile(uri: string): Promise<void> {
@@ -568,9 +620,49 @@ export class LspServer {
         // Build symbol table if parsing produced a CST
         if (result.cst) {
             const table = buildSymbolTable(result.cst);
+
+            // Annotation processing for Lombok/Spring support
+            const annotations = extractAnnotations(result.cst);
+            if (annotations.length > 0) {
+                for (const sym of table.symbols) {
+                    if (sym.kind === 'class' || sym.kind === 'interface' || sym.kind === 'record') {
+                        const classAnnotations = annotations.filter(a => a.target === 'class');
+                        if (classAnnotations.length > 0) {
+                            const fields = sym.children?.filter(c => c.kind === 'field') ?? [];
+                            const generated = processAnnotations(sym, classAnnotations, fields);
+                            for (const gen of generated) {
+                                const genSymbol: any = {
+                                    name: gen.name,
+                                    kind: gen.kind,
+                                    type: gen.type,
+                                    modifiers: gen.modifiers,
+                                    parameters: gen.parameters,
+                                    line: sym.line,
+                                    column: sym.column,
+                                    endLine: sym.line,
+                                    endColumn: sym.column,
+                                    parent: sym.name,
+                                    children: [],
+                                    isGenerated: true,
+                                    generatedBy: gen.generatedBy,
+                                };
+                                sym.children.push(genSymbol);
+                                table.allSymbols.push(genSymbol);
+                            }
+                        }
+                    }
+                }
+            }
+
             this.symbolTables.set(uri, table);
             // Update workspace index
             this.workspaceIndex.updateFile(uri, result, table);
+
+            // Update document cache
+            const doc = this.documents.get(uri);
+            if (doc) {
+                this.documentCache.update(uri, doc.version, text, result, table);
+            }
         }
 
         const parseDiagnostics = parseErrorsToDiagnostics(result.errors);
@@ -593,6 +685,51 @@ export class LspServer {
 
         if (result.errors.length > 0) {
             this.logger.log(`Parsed ${uri}: ${result.errors.length} error(s)`);
+        }
+    }
+
+    private async resolveClasspath(): Promise<void> {
+        if (!this.rootUri) return;
+        try {
+            const { URI } = await import('vscode-uri');
+            const { existsSync } = await import('node:fs');
+            const { join } = await import('node:path');
+            const rootPath = URI.parse(this.rootUri).fsPath;
+
+            let mavenDeps: any[] | undefined;
+            let gradleDeps: any[] | undefined;
+
+            // Try to read pom.xml
+            const pomPath = join(rootPath, 'pom.xml');
+            if (existsSync(pomPath)) {
+                const pomInfo = await parsePomXml(pomPath, this.logger);
+                if (pomInfo) {
+                    mavenDeps = pomInfo.dependencies;
+                }
+            }
+
+            // Try to read build.gradle or build.gradle.kts
+            const gradlePath = join(rootPath, 'build.gradle');
+            const gradleKtsPath = join(rootPath, 'build.gradle.kts');
+            const gradleBuildPath = existsSync(gradlePath) ? gradlePath : existsSync(gradleKtsPath) ? gradleKtsPath : null;
+            if (gradleBuildPath) {
+                const gradleInfo = await parseGradleBuild(gradleBuildPath, this.logger);
+                if (gradleInfo) {
+                    gradleDeps = gradleInfo.dependencies;
+                }
+            }
+
+            const javaHome = this.settings.java.home;
+            const classpath = await resolveProjectClasspath({ mavenDeps, gradleDeps, javaHome });
+
+            if (classpath.dependencies.length > 0) {
+                await this.jarIndex.indexDependencies(classpath.dependencies);
+                this.logger.info(`Indexed ${this.jarIndex.size} types from ${classpath.dependencies.length} JARs`);
+            }
+
+            this.classpathResolved = true;
+        } catch (e) {
+            this.logger.warn(`Classpath resolution error: ${e}`);
         }
     }
 }
