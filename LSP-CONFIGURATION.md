@@ -22,23 +22,45 @@ The server communicates over **stdio** using the [Language Server Protocol](http
 
 ## GitHub Copilot CLI
 
-[GitHub Copilot CLI](https://docs.github.com/en/copilot/using-github-copilot/using-github-copilot-in-the-command-line) can leverage language servers for enhanced code understanding.
+[GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-getting-started) is a standalone command-line tool that can leverage language servers for enhanced code understanding.
 
-### Setup
-
-1. Ensure GitHub Copilot CLI is installed:
+### Step 1: Install GitHub Copilot CLI
 
 ```bash
-gh extension install github/gh-copilot
+npm install -g @github/copilot-cli
 ```
 
-2. Install jj-language-server:
+Verify the installation:
+
+```bash
+copilot --version
+```
+
+### Step 2: Install jj-language-server
 
 ```bash
 npm install -g jj-language-server
 ```
 
-3. The GitHub Copilot CLI will automatically discover language servers configured in your editor. If you use VS Code with jj-language-server configured (see below), Copilot CLI will benefit from it when working within a VS Code terminal.
+### Step 3: Configure the LSP server
+
+Create or edit the LSP configuration file at `~/.copilot/lsp-config.json`:
+
+```json
+{
+  "lspServers": {
+    "jj-language-server": {
+      "command": "jj-language-server",
+      "args": ["--stdio"],
+      "fileExtensions": {
+        ".java": "java"
+      }
+    }
+  }
+}
+```
+
+You can also use a **project-level** configuration by placing a `.github/lsp.json` file in your repository root (same format). Project-level configuration takes precedence over user-level.
 
 ### What It Provides
 
