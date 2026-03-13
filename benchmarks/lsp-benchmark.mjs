@@ -158,6 +158,18 @@ async function initializeServer(client, rootUri) {
             workspace: { workspaceFolders: true },
         },
         workspaceFolders: [{ uri: rootUri, name: 'petclinic' }],
+        // Tell JDTLS to prefer Maven over Gradle (PetClinic has both, and
+        // Gradle fails when the required Java toolchain is unavailable).
+        initializationOptions: {
+            settings: {
+                java: {
+                    import: {
+                        maven: { enabled: true },
+                        gradle: { enabled: false },
+                    },
+                },
+            },
+        },
     });
 }
 
