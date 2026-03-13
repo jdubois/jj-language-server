@@ -50,18 +50,18 @@ All features are wired into the LSP server and fully functional:
 - **Import resolution** — resolves `import` statements, maps unqualified names throughout the file
 - **Type inference** — local variable types, expression types (method calls, field access, literals, operators), type resolver for symbols, members, method return types, field types
 - **JDK API model** — 238 built-in JDK types covering core packages (java.lang, java.util, java.io, java.nio, java.net, java.time, java.sql, java.math, java.text, java.util.concurrent, java.util.stream, java.util.function, java.util.regex, java.security)
-- **Hover** — symbol signatures + JDK type info + Javadoc from source comments
-- **Code completion** — scope-aware symbols, JDK types with auto-import, keywords, snippets
-- **Signature help** — parameter hints for methods in scope
-- **Go-to-definition** — local + cross-file via workspace index, import-resolved
+- **Hover** — symbol signatures + JDK type info + Javadoc from source comments + dependency JAR type info via source JARs
+- **Code completion** — scope-aware symbols, JDK types with auto-import, keywords, snippets, overload-aware (each overload shown separately with argument-count ranking)
+- **Signature help** — parameter hints for methods in scope, shows all overloads with best-match selection based on argument count
+- **Go-to-definition** — local + cross-file via workspace index, import-resolved, source JAR navigation for dependency types
 - **Go-to-implementation** — finds subclasses/implementors across workspace
 - **Go-to-type-definition** — navigates to type declaration of a variable
 - **Find references / Document highlight** — finds matching identifiers, cross-file search
 - **Rename** — cross-file rename via workspace index
-- **Semantic tokens** — classifies identifiers via symbol table (20 token types, 10 modifiers)
-- **Code actions** — organize imports, extract variable, extract method, extract constant, inline variable, surround with try-catch, add import for JDK types
-- **Inlay hints** — parameter name hints on method calls
-- **Call hierarchy** — incoming/outgoing calls within file
+- **Semantic tokens** — classifies identifiers via symbol table (20 token types, 10 modifiers), generic type parameter classification
+- **Code actions** — organize imports, extract variable, extract method, extract constant, inline variable, surround with try-catch, add import for JDK types, move class to package, change method signature
+- **Inlay hints** — parameter name hints on method calls, `var` type inference hints (shows inferred type for `var` declarations)
+- **Call hierarchy** — incoming/outgoing calls, cross-file via workspace index
 - **Classpath resolution** — resolves Maven dependencies via `~/.m2/repository`, Gradle via `~/.gradle/caches`, detects JDK path and version; auto-resolves on workspace init
 - **Java class file reader** — parses `.class` files from JARs to extract type metadata (classes, methods, fields, access flags) without a JVM
 - **JAR type index** — builds a searchable type index from resolved dependency JARs (ZIP parsing, class extraction, type search)
@@ -69,20 +69,8 @@ All features are wired into the LSP server and fully functional:
 - **Document cache** — version-aware caching with debounced reparsing for performance
 - **Multi-root workspace** — supports multiple workspace folders, each with its own index; handles `workspace/didChangeWorkspaceFolders`
 - **Linked editing ranges** — synchronized editing of all occurrences of an identifier
-- **Document links** — clickable URLs in comments and strings
-
-### Known Limitations
-
-- No overload resolution (requires generics support)
-- No generic type parameter classification in semantic tokens
-- No inferred type hints for `var` in inlay hints
-- Call hierarchy is single-file only (no cross-file call graph)
-
-### ❌ Not Yet Implemented
-
-- **Generics & overload resolution** — generic type parameters, bounded wildcards, overloaded method selection
-- **Advanced refactoring** — move class, change method signature
-- **Source JAR navigation** — go-to-definition into dependency source JARs
+- **Generics support** — type parameters extracted from classes, interfaces, methods; classified in semantic tokens; bounded type parameter tracking
+- **Source JAR navigation** — go-to-definition into dependency source JARs with virtual URI scheme, Javadoc from source JARs in hover
 
 ### Roadmap
 
@@ -98,6 +86,11 @@ All features are wired into the LSP server and fully functional:
 | 8. Advanced Refactoring | Extract method, extract constant, inline variable | ✅ Done |
 | 9. Classpath Resolution | Classpath resolver, class file reader, JDK model, annotation processing | ✅ Done |
 | 10. Performance & Polish | Document cache, multi-root workspace, linked editing, document links | ✅ Done |
+| 11. Quick Wins | `var` inlay hints, cross-file call hierarchy | ✅ Done |
+| 12. Generics Foundation | Type parameters in symbol table, semantic token classification | ✅ Done |
+| 13. Overload Resolution | Overload-aware completion, best-match signature help | ✅ Done |
+| 14. Advanced Refactoring | Move class to package, change method signature | ✅ Done |
+| 15. Source JAR Navigation | Source JAR extraction/caching, go-to-definition into JARs | ✅ Done |
 
 ## How It Works
 
@@ -118,7 +111,7 @@ npm run build
 npm test
 ```
 
-There are **451 tests** across 32 test files. Integration tests use the [Spring PetClinic](https://github.com/spring-projects/spring-petclinic) project as a realistic fixture. The pinned commit is tracked in `test-fixtures/spring-petclinic-sha.txt`.
+There are **491 tests** across 35 test files. Integration tests use the [Spring PetClinic](https://github.com/spring-projects/spring-petclinic) project as a realistic fixture. The pinned commit is tracked in `test-fixtures/spring-petclinic-sha.txt`.
 
 ### CI / CD
 

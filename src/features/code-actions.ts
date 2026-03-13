@@ -96,6 +96,34 @@ export function provideCodeActions(
         }
     }
 
+    // Add Move Class action when cursor is on a class declaration
+    const classSym = table.allSymbols.find(s =>
+        (s.kind === 'class' || s.kind === 'interface' || s.kind === 'enum') &&
+        s.line >= range.start.line && s.line <= range.end.line
+    );
+    if (classSym) {
+        actions.push({
+            title: `Move '${classSym.name}' to another package`,
+            kind: lsp.CodeActionKind.Refactor,
+            // This is a "stub" action - the actual move requires user input for the target package
+            // LSP clients will show this as an available refactoring
+            data: { type: 'moveClass', className: classSym.name, uri },
+        });
+    }
+
+    // Add Change Signature action when cursor is on a method declaration
+    const methodSym = table.allSymbols.find(s =>
+        (s.kind === 'method' || s.kind === 'constructor') &&
+        s.line >= range.start.line && s.line <= range.end.line
+    );
+    if (methodSym) {
+        actions.push({
+            title: `Change signature of '${methodSym.name}'`,
+            kind: lsp.CodeActionKind.Refactor,
+            data: { type: 'changeSignature', methodName: methodSym.name, uri },
+        });
+    }
+
     return actions;
 }
 

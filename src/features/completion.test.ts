@@ -75,3 +75,20 @@ describe('provideCompletions', () => {
         expect(names).toContain('count');
     });
 });
+
+describe('method overload completion', () => {
+    it('should show separate completion items for each overload', () => {
+        const source = `public class Calculator {
+    int add(int a, int b) { return a + b; }
+    double add(double a, double b) { return a + b; }
+    int add(int a, int b, int c) { return a + b + c; }
+    void test() {
+        int x = 0;
+    }
+}`;
+        // Line 5 is inside the test() method body (0-based)
+        const items = getCompletions(source, 5, 0);
+        const addItems = items?.filter(i => i.label === 'add') ?? [];
+        expect(addItems.length).toBeGreaterThanOrEqual(2);
+    });
+});

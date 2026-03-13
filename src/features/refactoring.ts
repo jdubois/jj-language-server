@@ -10,6 +10,15 @@ import lsp from 'vscode-languageserver';
 import type { CstNode } from 'chevrotain';
 import type { SymbolTable, JavaSymbol } from '../java/symbol-table.js';
 
+export interface SignatureChange {
+    /** New method name (or same if unchanged) */
+    newName?: string;
+    /** New parameter list. Use existing param names to keep, omit to remove, add new ones */
+    newParameters: { type: string; name: string }[];
+    /** New return type (or undefined to keep) */
+    newReturnType?: string;
+}
+
 /**
  * Provide advanced refactoring code actions.
  */
@@ -246,6 +255,302 @@ function createInlineVariableAction(
 
 function escapeRegex(s: string): string {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// ---------------------------------------------------------------------------
+// Move Class
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a "Move Class" refactoring action.
+ * When triggered on a class declaration, generates edits to:
+ * 1. Update the package declaration in the source file
+ * 2. Update all import statements across workspace files that reference this class
+ */
+export function createMoveClassAction(
+    table: SymbolTable,
+    text: string,
+    uri: string,
+    range: lsp.Range,
+    newPackage: string,
+    workspaceFiles?: Map<string, string>,  // uri → text content
+): lsp.CodeAction | null {
+    // Find class at cursor
+    const classSym = table.allSymbols.find(s =>
+        (s.kind === 'class' || s.kind === 'interface' || s.kind === 'enum' || s.kind === 'record') &&
+        s.line >= range.start.line && s.line <= range.end.line
+    );
+    if (!classSym) return null;
+
+    const changes: { [uri: string]: lsp.TextEdit[] } = {};
+    const edits: lsp.TextEdit[] = [];
+
+    // 1. Update package declaration in current file
+    const lines = text.split('\n');
+    const packageLine = lines.findIndex(l => l.trimStart().startsWith('package '));
+    if (packageLine >= 0) {
+        // Replace existing package
+        const lineText = lines[packageLine];
+        edits.push(lsp.TextEdit.replace(
+            lsp.Range.create(packageLine, 0, packageLine, lineText.length),
+            `package ${newPackage};`
+        ));
+    } else {
+        // Insert package at top (after any comments)
+        let insertLine = 0;
+        for (let i = 0; i < lines.length; i++) {
+            const trimmed = lines[i].trim();
+            if (trimmed.startsWith('/*') || trimmed.startsWith('*') || trimmed.startsWith('//') || trimmed === '') {
+                insertLine = i + 1;
+            } else break;
+        }
+        edits.push(lsp.TextEdit.insert(
+            lsp.Position.create(insertLine, 0),
+            `package ${newPackage};\n\n`
+        ));
+    }
+
+    changes[uri] = edits;
+
+    // 2. Find old package name from the current file
+    const oldPackageLine = lines.find(l => l.trimStart().startsWith('package '));
+    const oldPackage = oldPackageLine
+        ? oldPackageLine.trim().replace(/^package\s+/, '').replace(/;.*$/, '').trim()
+        : '';
+    const oldQualified = oldPackage ? `${oldPackage}.${classSym.name}` : classSym.name;
+    const newQualified = `${newPackage}.${classSym.name}`;
+
+    // 3. Update imports in other workspace files
+    if (workspaceFiles) {
+        for (const [fileUri, fileText] of workspaceFiles.entries()) {
+            if (fileUri === uri) continue;
+            const fileLines = fileText.split('\n');
+            const fileEdits: lsp.TextEdit[] = [];
+
+            for (let i = 0; i < fileLines.length; i++) {
+                const line = fileLines[i];
+                // Match import of old qualified name
+                if (line.trim() === `import ${oldQualified};`) {
+                    fileEdits.push(lsp.TextEdit.replace(
+                        lsp.Range.create(i, 0, i, line.length),
+                        `import ${newQualified};`
+                    ));
+                }
+                // Match wildcard import of old package
+                if (line.trim() === `import ${oldPackage}.*;`) {
+                    // Wildcard still works, but add explicit import for the moved class
+                    // (don't remove wildcard as other classes may still be in old package)
+                    fileEdits.push(lsp.TextEdit.insert(
+                        lsp.Position.create(i + 1, 0),
+                        `import ${newQualified};\n`
+                    ));
+                }
+            }
+
+            if (fileEdits.length > 0) {
+                changes[fileUri] = fileEdits;
+            }
+        }
+    }
+
+    return {
+        title: `Move '${classSym.name}' to package '${newPackage}'`,
+        kind: lsp.CodeActionKind.Refactor,
+        edit: { changes },
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Change Method Signature
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a "Change Method Signature" refactoring action.
+ * Updates the method declaration and all call sites across workspace.
+ */
+export function createChangeSignatureAction(
+    table: SymbolTable,
+    text: string,
+    uri: string,
+    range: lsp.Range,
+    change: SignatureChange,
+    workspaceFiles?: Map<string, string>,
+): lsp.CodeAction | null {
+    // Find method at cursor
+    const method = table.allSymbols.find(s =>
+        (s.kind === 'method' || s.kind === 'constructor') &&
+        s.line >= range.start.line && s.line <= range.end.line
+    );
+    if (!method) return null;
+
+    const changes: { [uri: string]: lsp.TextEdit[] } = {};
+    const edits: lsp.TextEdit[] = [];
+    const oldName = method.name;
+    const newName = change.newName ?? oldName;
+
+    // 1. Rebuild the method signature line
+    const lines = text.split('\n');
+    const methodLine = lines[method.line];
+
+    // Find the parameter list in the method line: between ( and )
+    const parenStart = methodLine.indexOf('(');
+    const parenEnd = methodLine.indexOf(')', parenStart);
+
+    if (parenStart >= 0 && parenEnd >= 0) {
+        // Build new parameter string
+        const newParamStr = change.newParameters
+            .map(p => `${p.type} ${p.name}`)
+            .join(', ');
+
+        // Replace the method name and parameters
+        let newMethodLine = methodLine;
+
+        // Replace parameters
+        newMethodLine = newMethodLine.substring(0, parenStart + 1) + newParamStr + newMethodLine.substring(parenEnd);
+
+        // Replace method name if changed
+        if (newName !== oldName) {
+            const nameStart = newMethodLine.lastIndexOf(oldName, parenStart);
+            if (nameStart >= 0) {
+                newMethodLine = newMethodLine.substring(0, nameStart) + newName + newMethodLine.substring(nameStart + oldName.length);
+            }
+        }
+
+        // Replace return type if changed
+        if (change.newReturnType && method.returnType) {
+            const rtStart = newMethodLine.indexOf(method.returnType);
+            if (rtStart >= 0 && rtStart < parenStart) {
+                newMethodLine = newMethodLine.substring(0, rtStart) + change.newReturnType + newMethodLine.substring(rtStart + method.returnType.length);
+            }
+        }
+
+        edits.push(lsp.TextEdit.replace(
+            lsp.Range.create(method.line, 0, method.line, methodLine.length),
+            newMethodLine
+        ));
+    }
+
+    // 2. Build parameter reorder map: old param index → new param index
+    const oldParams = method.parameters ?? [];
+    const reorderMap: Map<number, number> = new Map();
+    for (let newIdx = 0; newIdx < change.newParameters.length; newIdx++) {
+        const newParam = change.newParameters[newIdx];
+        const oldIdx = oldParams.findIndex(p => p.name === newParam.name);
+        if (oldIdx >= 0) {
+            reorderMap.set(oldIdx, newIdx);
+        }
+    }
+
+    // 3. Update call sites in current file
+    updateCallSites(lines, oldName, newName, oldParams, change.newParameters, reorderMap, method.line, edits);
+
+    if (edits.length > 0) {
+        changes[uri] = edits;
+    }
+
+    // 4. Update call sites in workspace files
+    if (workspaceFiles) {
+        for (const [fileUri, fileText] of workspaceFiles.entries()) {
+            if (fileUri === uri) continue;
+            const fileLines = fileText.split('\n');
+            const fileEdits: lsp.TextEdit[] = [];
+            updateCallSites(fileLines, oldName, newName, oldParams, change.newParameters, reorderMap, -1, fileEdits);
+            if (fileEdits.length > 0) {
+                changes[fileUri] = fileEdits;
+            }
+        }
+    }
+
+    return {
+        title: `Change signature of '${oldName}'`,
+        kind: lsp.CodeActionKind.Refactor,
+        edit: { changes },
+    };
+}
+
+function updateCallSites(
+    lines: string[],
+    oldName: string,
+    newName: string,
+    oldParams: { type: string; name: string }[],
+    newParams: { type: string; name: string }[],
+    reorderMap: Map<number, number>,
+    skipLine: number,
+    edits: lsp.TextEdit[],
+): void {
+    // Simple approach: find lines containing methodName( and update
+    const callPattern = new RegExp(`\\b${escapeRegex(oldName)}\\s*\\(`);
+
+    for (let i = 0; i < lines.length; i++) {
+        if (i === skipLine) continue; // Skip the declaration itself
+        const line = lines[i];
+        if (!callPattern.test(line)) continue;
+
+        // Find the call: name(args)
+        const match = line.match(new RegExp(`\\b${escapeRegex(oldName)}(\\s*)\\(`));
+        if (!match || match.index === undefined) continue;
+
+        const nameStart = match.index;
+        const parenStart = line.indexOf('(', nameStart);
+
+        // Find matching closing paren (handle nested parens)
+        let depth = 0;
+        let parenEnd = -1;
+        for (let j = parenStart; j < line.length; j++) {
+            if (line[j] === '(') depth++;
+            else if (line[j] === ')') {
+                depth--;
+                if (depth === 0) { parenEnd = j; break; }
+            }
+        }
+        if (parenEnd < 0) continue;
+
+        // Extract current arguments
+        const argsStr = line.substring(parenStart + 1, parenEnd);
+        const args = splitArgs(argsStr);
+
+        // Reorder arguments according to the map
+        const newArgs: string[] = new Array(newParams.length).fill('/* TODO */');
+        for (const [oldIdx, newIdx] of reorderMap.entries()) {
+            if (oldIdx < args.length) {
+                newArgs[newIdx] = args[oldIdx].trim();
+            }
+        }
+
+        // For new parameters not mapped from old ones, add placeholder
+        for (let j = 0; j < newParams.length; j++) {
+            if (newArgs[j] === '/* TODO */') {
+                // Check if there's an arg at the same position from old that wasn't mapped
+                if (j < args.length && !reorderMap.has(j)) {
+                    newArgs[j] = args[j].trim();
+                }
+            }
+        }
+
+        const newCallStr = `${newName}${match[1]}(${newArgs.join(', ')})`;
+        edits.push(lsp.TextEdit.replace(
+            lsp.Range.create(i, nameStart, i, parenEnd + 1),
+            newCallStr
+        ));
+    }
+}
+
+function splitArgs(argsStr: string): string[] {
+    const args: string[] = [];
+    let depth = 0;
+    let current = '';
+    for (const ch of argsStr) {
+        if (ch === '(' || ch === '<') depth++;
+        else if (ch === ')' || ch === '>') depth--;
+        else if (ch === ',' && depth === 0) {
+            args.push(current);
+            current = '';
+            continue;
+        }
+        current += ch;
+    }
+    if (current.trim()) args.push(current);
+    return args;
 }
 
 // ---------------------------------------------------------------------------

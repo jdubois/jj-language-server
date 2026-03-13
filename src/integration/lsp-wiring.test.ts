@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { LspServer } from '../lsp-server.js';
+import { SourceJarCache } from '../project/source-jar.js';
 
 describe('LSP Server Phase 9-10 Wiring', () => {
     let server: LspServer;
@@ -116,6 +117,39 @@ public class Person {
                     removed: [{ uri: 'file:///project-a', name: 'project-a' }],
                 });
             }).not.toThrow();
+        });
+    });
+
+    describe('source JAR navigation', () => {
+        it('should advertise definition provider', () => {
+            const result = server.initialize({ rootUri: null, capabilities: {} } as any);
+            expect(result.capabilities.definitionProvider).toBe(true);
+        });
+
+        it('should handle virtual URI detection', () => {
+            expect(SourceJarCache.isVirtualUri('jj-source-jar:///java/util/ArrayList.java')).toBe(true);
+            expect(SourceJarCache.isVirtualUri('file:///src/Main.java')).toBe(false);
+        });
+
+        it('should extract qualified name from virtual URI', () => {
+            expect(SourceJarCache.qualifiedNameFromUri('jj-source-jar:///java/util/ArrayList.java')).toBe('java.util.ArrayList');
+        });
+
+        it('should create virtual URI from qualified name', () => {
+            expect(SourceJarCache.createVirtualUri('java.util.ArrayList')).toBe('jj-source-jar:///java/util/ArrayList.java');
+        });
+
+        it('should return null definition for unknown token', async () => {
+            const source = 'public class Foo { UnknownType x; }';
+            server.didOpenTextDocument({
+                textDocument: { uri: 'file:///test.java', languageId: 'java', version: 1, text: source },
+            });
+            const result = await server.definition({
+                textDocument: { uri: 'file:///test.java' },
+                position: { line: 0, character: 25 },
+            });
+            // No workspace or jar index entries, so should return null
+            expect(result).toBeNull();
         });
     });
 });

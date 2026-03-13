@@ -11,6 +11,7 @@ import lsp from 'vscode-languageserver';
 import { parseJava } from '../java/parser.js';
 import { buildSymbolTable } from '../java/symbol-table.js';
 import { provideRefactoringActions } from './refactoring.js';
+import { createMoveClassAction, createChangeSignatureAction } from './refactoring.js';
 
 function getActions(code: string, startLine: number, startChar: number, endLine: number, endChar: number) {
     const result = parseJava(code);
@@ -202,5 +203,143 @@ describe('refactoring', () => {
         const actions = getActions(code, 2, 0, 2, 0);
         const inline = actions.find(a => a.title === 'Inline variable');
         expect(inline).toBeUndefined();
+    });
+});
+
+describe('move class', () => {
+    it('should update package declaration', () => {
+        const source = `package com.old;
+
+public class MyService {
+    public void run() {}
+}`;
+        const { cst } = parseJava(source);
+        const table = buildSymbolTable(cst!);
+        const action = createMoveClassAction(
+            table, source, 'file:///MyService.java',
+            { start: { line: 2, character: 0 }, end: { line: 2, character: 0 } },
+            'com.newpackage'
+        );
+        expect(action).toBeTruthy();
+        const edits = action!.edit!.changes!['file:///MyService.java'];
+        expect(edits.length).toBeGreaterThanOrEqual(1);
+        expect(edits[0].newText).toBe('package com.newpackage;');
+    });
+
+    it('should update imports in other files', () => {
+        const source = `package com.old;
+public class MyService {}`;
+        const otherFile = `package com.other;
+import com.old.MyService;
+public class Consumer {
+    MyService svc;
+}`;
+        const { cst } = parseJava(source);
+        const table = buildSymbolTable(cst!);
+        const workspaceFiles = new Map([
+            ['file:///Consumer.java', otherFile],
+        ]);
+        const action = createMoveClassAction(
+            table, source, 'file:///MyService.java',
+            { start: { line: 1, character: 0 }, end: { line: 1, character: 0 } },
+            'com.newpackage',
+            workspaceFiles
+        );
+        expect(action).toBeTruthy();
+        const otherEdits = action!.edit!.changes!['file:///Consumer.java'];
+        expect(otherEdits).toBeTruthy();
+        expect(otherEdits[0].newText).toBe('import com.newpackage.MyService;');
+    });
+
+    it('should return null when cursor is not on a class', () => {
+        const source = `package com.old;
+public class MyService {
+    void method() {}
+}`;
+        const { cst } = parseJava(source);
+        const table = buildSymbolTable(cst!);
+        const action = createMoveClassAction(
+            table, source, 'file:///test.java',
+            { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } },
+            'com.new'
+        );
+        expect(action).toBeNull();
+    });
+});
+
+describe('change method signature', () => {
+    it('should rename parameters', () => {
+        const source = `public class Calc {
+    int add(int a, int b) { return a + b; }
+    void test() {
+        add(1, 2);
+    }
+}`;
+        const { cst } = parseJava(source);
+        const table = buildSymbolTable(cst!);
+        const action = createChangeSignatureAction(
+            table, source, 'file:///Calc.java',
+            { start: { line: 1, character: 0 }, end: { line: 1, character: 0 } },
+            { newParameters: [{ type: 'int', name: 'x' }, { type: 'int', name: 'y' }] }
+        );
+        expect(action).toBeTruthy();
+        const edits = action!.edit!.changes!['file:///Calc.java'];
+        expect(edits.length).toBeGreaterThanOrEqual(1);
+        // Method declaration should be updated
+        const declEdit = edits.find(e => e.range.start.line === 1);
+        expect(declEdit?.newText).toContain('int x');
+        expect(declEdit?.newText).toContain('int y');
+    });
+
+    it('should add new parameter with placeholder', () => {
+        const source = `public class Svc {
+    void process(String name) {}
+    void test() {
+        process("hello");
+    }
+}`;
+        const { cst } = parseJava(source);
+        const table = buildSymbolTable(cst!);
+        const action = createChangeSignatureAction(
+            table, source, 'file:///Svc.java',
+            { start: { line: 1, character: 0 }, end: { line: 1, character: 0 } },
+            { newParameters: [{ type: 'String', name: 'name' }, { type: 'int', name: 'count' }] }
+        );
+        expect(action).toBeTruthy();
+        const edits = action!.edit!.changes!['file:///Svc.java'];
+        // Call site should be updated with placeholder for new param
+        const callEdit = edits.find(e => e.range.start.line === 3);
+        expect(callEdit).toBeTruthy();
+    });
+
+    it('should return null when cursor is not on a method', () => {
+        const source = `public class Foo {
+    int field;
+}`;
+        const { cst } = parseJava(source);
+        const table = buildSymbolTable(cst!);
+        const action = createChangeSignatureAction(
+            table, source, 'file:///Foo.java',
+            { start: { line: 1, character: 0 }, end: { line: 1, character: 0 } },
+            { newParameters: [] }
+        );
+        expect(action).toBeNull();
+    });
+
+    it('should change return type', () => {
+        const source = `public class Converter {
+    int convert(String s) { return 0; }
+}`;
+        const { cst } = parseJava(source);
+        const table = buildSymbolTable(cst!);
+        const action = createChangeSignatureAction(
+            table, source, 'file:///Converter.java',
+            { start: { line: 1, character: 0 }, end: { line: 1, character: 0 } },
+            { newParameters: [{ type: 'String', name: 's' }], newReturnType: 'long' }
+        );
+        expect(action).toBeTruthy();
+        const edits = action!.edit!.changes!['file:///Converter.java'];
+        const declEdit = edits.find(e => e.range.start.line === 1);
+        expect(declEdit?.newText).toContain('long');
     });
 });

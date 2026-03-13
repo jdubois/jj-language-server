@@ -7,7 +7,7 @@
  */
 
 import lsp from 'vscode-languageserver';
-import type { SymbolTable } from '../java/symbol-table.js';
+import type { SymbolTable, JavaSymbol } from '../java/symbol-table.js';
 import { findVisibleSymbols } from '../java/scope-resolver.js';
 import { getAllJdkTypes, type JdkType } from '../project/jdk-model.js';
 import { formatJavadocMarkdown, type JavadocComment } from '../java/javadoc.js';
@@ -124,11 +124,32 @@ export function provideCompletions(
     const importInsertLine = text ? findImportInsertLine(text.split('\n')) : 0;
     const existingImports = text ? extractImportedNames(text) : new Set<string>();
 
-    // Add visible symbols from scope
+    // Add visible symbols from scope, with overload-aware handling for methods
     const visible = findVisibleSymbols(table, line, character);
     const seen = new Set<string>();
 
+    // Estimate current argument count if cursor is inside a method call
+    const estimatedArgCount = text ? estimateArgumentCount(text, line, character) : -1;
+
+    // Group methods/constructors by name for overload handling
+    const methodsByName = new Map<string, typeof visible>();
+    const nonMethods: typeof visible = [];
+
     for (const sym of visible) {
+        if (sym.kind === 'method' || sym.kind === 'constructor') {
+            const group = methodsByName.get(sym.name);
+            if (group) {
+                group.push(sym);
+            } else {
+                methodsByName.set(sym.name, [sym]);
+            }
+        } else {
+            nonMethods.push(sym);
+        }
+    }
+
+    // Add non-method symbols (deduplicated)
+    for (const sym of nonMethods) {
         if (seen.has(sym.name)) continue;
         seen.add(sym.name);
 
@@ -147,6 +168,52 @@ export function provideCompletions(
         }
 
         items.push(item);
+    }
+
+    // Add method/constructor symbols with overload awareness
+    for (const [name, overloads] of methodsByName) {
+        if (overloads.length === 1) {
+            // Single method — add normally
+            const sym = overloads[0];
+            const item: lsp.CompletionItem = {
+                label: sym.name,
+                kind: symbolKindToCompletionKind(sym.kind),
+                detail: formatSymbolDetail(sym),
+                sortText: getSortPrefix(sym.kind) + sym.name,
+            };
+            if (javadocMap) {
+                const javadoc = javadocMap.get(sym.line + 1);
+                if (javadoc) {
+                    item.documentation = { kind: lsp.MarkupKind.Markdown, value: formatJavadocMarkdown(javadoc) };
+                }
+            }
+            items.push(item);
+        } else {
+            // Multiple overloads — create a separate item for each
+            // Sort overloads: if inside a call, prefer matching argument count
+            const sorted = sortOverloads(overloads, estimatedArgCount);
+
+            for (let i = 0; i < sorted.length; i++) {
+                const sym = sorted[i];
+                const paramTypes = sym.parameters?.map(p => p.type).join(', ') ?? '';
+                const item: lsp.CompletionItem = {
+                    label: sym.name,
+                    kind: symbolKindToCompletionKind(sym.kind),
+                    detail: formatSymbolDetail(sym),
+                    sortText: getSortPrefix(sym.kind) + sym.name + '_' + String(i).padStart(3, '0'),
+                    labelDetails: {
+                        detail: `(${paramTypes})`,
+                    },
+                };
+                if (javadocMap) {
+                    const javadoc = javadocMap.get(sym.line + 1);
+                    if (javadoc) {
+                        item.documentation = { kind: lsp.MarkupKind.Markdown, value: formatJavadocMarkdown(javadoc) };
+                    }
+                }
+                items.push(item);
+            }
+        }
     }
 
     // Add Java keywords
@@ -265,6 +332,61 @@ function findImportInsertLine(lines: string[]): number {
     if (lastImportLine >= 0) return lastImportLine + 1;
     if (packageLine >= 0) return packageLine + 2;
     return 0;
+}
+
+/**
+ * Estimate the number of arguments at the cursor position by counting commas
+ * inside the innermost parenthesized argument list. Returns -1 if not inside a call.
+ */
+function estimateArgumentCount(text: string, line: number, character: number): number {
+    const lines = text.split('\n');
+    if (line >= lines.length) return -1;
+
+    let offset = 0;
+    for (let i = 0; i < line; i++) {
+        offset += lines[i].length + 1;
+    }
+    offset += character;
+
+    let depth = 0;
+    let commaCount = 0;
+
+    for (let i = offset - 1; i >= 0; i--) {
+        const ch = text[i];
+        if (ch === ')') {
+            depth++;
+        } else if (ch === '(') {
+            if (depth === 0) {
+                return commaCount + 1;
+            }
+            depth--;
+        } else if (ch === ',' && depth === 0) {
+            commaCount++;
+        }
+    }
+
+    return -1;
+}
+
+function sortOverloads(
+    overloads: JavaSymbol[],
+    estimatedArgCount: number,
+): JavaSymbol[] {
+    if (estimatedArgCount < 0) {
+        // Not inside a call — sort by parameter count ascending
+        return [...overloads].sort(
+            (a, b) => (a.parameters?.length ?? 0) - (b.parameters?.length ?? 0),
+        );
+    }
+
+    // Sort: matching arg count first, then by distance from estimated count
+    return [...overloads].sort((a, b) => {
+        const aLen = a.parameters?.length ?? 0;
+        const bLen = b.parameters?.length ?? 0;
+        const aDist = Math.abs(aLen - estimatedArgCount);
+        const bDist = Math.abs(bLen - estimatedArgCount);
+        return aDist - bDist;
+    });
 }
 
 function extractImportedNames(text: string): Set<string> {

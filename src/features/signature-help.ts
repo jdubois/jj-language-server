@@ -47,9 +47,25 @@ export function provideSignatureHelp(
         };
     });
 
+    // Pick the best-matching overload based on argument count
+    const argCount = activeParameter + 1;
+    let bestIndex = 0;
+    let bestDistance = Infinity;
+    for (let i = 0; i < signatures.length; i++) {
+        const paramCount = signatures[i].parameters?.length ?? 0;
+        // Prefer overloads that have at least as many params as current arg count
+        const distance = paramCount >= argCount
+            ? paramCount - argCount
+            : (argCount - paramCount) + 1000; // penalize too-few params
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestIndex = i;
+        }
+    }
+
     return {
         signatures,
-        activeSignature: 0,
+        activeSignature: bestIndex,
         activeParameter,
     };
 }

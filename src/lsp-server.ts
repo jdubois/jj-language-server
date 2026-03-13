@@ -33,13 +33,14 @@ import { prepareTypeHierarchy, provideSupertypes, provideSubtypes } from './feat
 import { provideCodeLens } from './features/code-lens.js';
 import { provideOnTypeFormatting } from './features/on-type-formatting.js';
 import { WorkspaceIndex } from './project/workspace-index.js';
-import { findJavadocComments } from './java/javadoc.js';
+import { findJavadocComments, formatJavadocMarkdown } from './java/javadoc.js';
 import { provideLinkedEditingRanges } from './features/linked-editing.js';
 import { provideDocumentLinks } from './features/document-links.js';
 import { DocumentCache } from './project/document-cache.js';
 import { MultiRootWorkspace } from './project/multi-root.js';
 import { resolveProjectClasspath, type ResolvedClasspath } from './project/classpath-resolver.js';
 import { JarIndex } from './project/jar-index.js';
+import { SourceJarCache } from './project/source-jar.js';
 import { extractAnnotations, processAnnotations } from './java/annotation-processor.js';
 import { parsePomXml } from './project/maven.js';
 import { parseGradleBuild } from './project/gradle.js';
@@ -85,6 +86,7 @@ export class LspServer {
     private documentCache: DocumentCache = new DocumentCache();
     private multiRoot: MultiRootWorkspace;
     private jarIndex: JarIndex;
+    private sourceJarCache: SourceJarCache;
     private classpathResolved: boolean = false;
     private settings: JjLanguageServerSettings = { ...DEFAULT_SETTINGS };
 
@@ -94,6 +96,7 @@ export class LspServer {
         this.workspaceIndex = new WorkspaceIndex(options.logger);
         this.multiRoot = new MultiRootWorkspace(options.logger);
         this.jarIndex = new JarIndex(options.logger);
+        this.sourceJarCache = new SourceJarCache(options.logger);
     }
 
     private rootUri: string | null = null;
@@ -181,12 +184,28 @@ export class LspServer {
         this.parseResults.clear();
         this.symbolTables.clear();
         this.documentCache.clear();
+        this.sourceJarCache.clear();
     }
 
     // --- Text Document Synchronization ---
 
     didOpenTextDocument(params: lsp.DidOpenTextDocumentParams): void {
         const { uri, languageId, version, text } = params.textDocument;
+
+        // Handle virtual source JAR URIs
+        if (SourceJarCache.isVirtualUri(uri)) {
+            const qualifiedName = SourceJarCache.qualifiedNameFromUri(uri);
+            this.sourceJarCache.findSource(qualifiedName).then(entry => {
+                if (entry) {
+                    const document = TextDocument.create(uri, 'java', version, entry.sourceText);
+                    this.documents.set(uri, document);
+                    this.parseResults.set(uri, entry.parseResult);
+                    this.symbolTables.set(uri, entry.symbolTable);
+                }
+            });
+            return;
+        }
+
         if (languageId !== 'java') {
             return;
         }
@@ -291,13 +310,63 @@ export class LspServer {
         return computeFoldingRanges(result.cst, document.getText());
     }
 
-    hover(params: lsp.HoverParams): lsp.Hover | null {
+    async hover(params: lsp.HoverParams): Promise<lsp.Hover | null> {
         const { uri } = params.textDocument;
         const result = this.parseResults.get(uri);
         const table = this.symbolTables.get(uri);
         const document = this.documents.get(uri);
         if (!result?.cst || !table || !document) return null;
-        return provideHover(result.cst, table, document.getText(), params.position.line, params.position.character);
+
+        const localHover = provideHover(result.cst, table, document.getText(), params.position.line, params.position.character);
+        if (localHover) return localHover;
+
+        // Try JAR index + source JAR for hover on dependency types
+        if (this.jarIndex.size > 0) {
+            const token = getTokenAtPosition(result.cst, params.position.line, params.position.character);
+            if (token) {
+                const indexedTypes = this.jarIndex.findTypesBySimpleName(token.image);
+                if (indexedTypes.length > 0) {
+                    const indexedType = indexedTypes[0];
+                    const info = indexedType.classInfo;
+                    const kindLabel = info.isInterface ? 'interface' : info.isEnum ? 'enum' : 'class';
+                    const superInfo = info.superClassName && info.superClassName !== 'java.lang.Object' ? ` extends ${info.superClassName}` : '';
+                    const ifaceInfo = info.interfaces?.length ? ` implements ${info.interfaces.join(', ')}` : '';
+                    const sig = `${kindLabel} ${indexedType.simpleName}${superInfo}${ifaceInfo}`;
+
+                    // Try to get Javadoc from source JAR
+                    let javadocSection = '';
+                    const sourceEntry = await this.sourceJarCache.findSource(indexedType.className);
+                    if (sourceEntry?.parseResult.cst) {
+                        const javadocMap = findJavadocComments(sourceEntry.parseResult.cst);
+                        const classSym = sourceEntry.symbolTable.allSymbols.find(
+                            s => s.name === indexedType.simpleName &&
+                            (s.kind === 'class' || s.kind === 'interface' || s.kind === 'enum' || s.kind === 'record'),
+                        );
+                        if (classSym) {
+                            const javadoc = javadocMap.get(classSym.line + 1);
+                            if (javadoc) {
+                                javadocSection = '\n\n---\n\n' + formatJavadocMarkdown(javadoc);
+                            }
+                        }
+                    }
+
+                    const startLine = Number.isFinite(token.startLine) ? token.startLine! - 1 : 0;
+                    const startCol = Number.isFinite(token.startColumn) ? token.startColumn! - 1 : 0;
+                    const endLine = Number.isFinite(token.endLine) ? token.endLine! - 1 : startLine;
+                    const endCol = Number.isFinite(token.endColumn) ? token.endColumn! : startCol;
+
+                    return {
+                        contents: {
+                            kind: lsp.MarkupKind.Markdown,
+                            value: `\`\`\`java\n${sig}\n\`\`\`\n\nFrom: \`${indexedType.className}\` (${indexedType.dependency.groupId}:${indexedType.dependency.artifactId}:${indexedType.dependency.version})${javadocSection}`,
+                        },
+                        range: lsp.Range.create(startLine, startCol, endLine, endCol),
+                    };
+                }
+            }
+        }
+
+        return null;
     }
 
     completion(params: lsp.CompletionParams): lsp.CompletionItem[] | null {
@@ -321,7 +390,7 @@ export class LspServer {
         return provideSignatureHelp(table, document.getText(), params.position.line, params.position.character);
     }
 
-    definition(params: lsp.DefinitionParams): lsp.Definition | null {
+    async definition(params: lsp.DefinitionParams): Promise<lsp.Definition | null> {
         const { uri } = params.textDocument;
         const result = this.parseResults.get(uri);
         const table = this.symbolTables.get(uri);
@@ -340,6 +409,28 @@ export class LspServer {
                     entry.uri,
                     lsp.Range.create(entry.line, entry.column, entry.line, entry.column + entry.name.length),
                 );
+            }
+
+            // Try JAR index + source JAR
+            if (this.jarIndex.size > 0) {
+                const indexedTypes = this.jarIndex.findTypesBySimpleName(token.image);
+                if (indexedTypes.length > 0) {
+                    const indexedType = indexedTypes[0];
+                    const sourceEntry = await this.sourceJarCache.findSource(indexedType.className);
+                    if (sourceEntry) {
+                        const classSym = sourceEntry.symbolTable.allSymbols.find(
+                            s => s.name === indexedType.simpleName &&
+                            (s.kind === 'class' || s.kind === 'interface' || s.kind === 'enum' || s.kind === 'record'),
+                        );
+                        const virtualUri = SourceJarCache.createVirtualUri(indexedType.className);
+                        const line = classSym?.line ?? 0;
+                        const col = classSym?.column ?? 0;
+                        return lsp.Location.create(
+                            virtualUri,
+                            lsp.Range.create(line, col, line, col + indexedType.simpleName.length),
+                        );
+                    }
+                }
             }
         }
 
@@ -725,6 +816,17 @@ export class LspServer {
             if (classpath.dependencies.length > 0) {
                 await this.jarIndex.indexDependencies(classpath.dependencies);
                 this.logger.info(`Indexed ${this.jarIndex.size} types from ${classpath.dependencies.length} JARs`);
+
+                // Register source JARs for go-to-definition into dependency sources
+                const sourceJars = classpath.dependencies
+                    .filter(d => d.sourceJarPath)
+                    .map(d => ({
+                        jarPath: d.sourceJarPath!,
+                        groupId: d.groupId,
+                        artifactId: d.artifactId,
+                        version: d.version,
+                    }));
+                this.sourceJarCache.registerSourceJars(sourceJars);
             }
 
             this.classpathResolved = true;
