@@ -88,17 +88,25 @@ The project uses **ES modules** (`"type": "module"` in package.json). Imports us
 
 Every source file starts with the Apache 2.0 copyright header for "jj-language-server contributors".
 
+### README Roadmap
+
+When a new feature is implemented, **always update the README.md** to reflect it:
+- Move features from ❌/🟡 to ✅ as they become fully implemented
+- Update the roadmap table with phase completion status
+- Update the test count in the Development section
+- This ensures the README is always an accurate reflection of the project's capabilities
+
 ## Roadmap to JDTLS Feature Parity
 
 The goal is full feature parity with Eclipse JDT Language Server, without requiring a JVM.
 
 ### Current Status
 
-The project has a full parsing pipeline (java-parser → CST → SymbolTable), a type inference engine, import/expression resolution, Javadoc extraction, and comprehensive semantic diagnostics. 280 tests pass across 23 test files, including 64 integration tests against Spring PetClinic.
+All 10 implementation phases are complete. The project has a full parsing pipeline (java-parser → CST → SymbolTable), a type inference engine, import/expression resolution, Javadoc extraction, comprehensive semantic diagnostics, classpath resolution, annotation processing, and performance features. **443 tests pass** across 31 test files, including 64 integration tests against Spring PetClinic.
 
-**Done:** Document symbols, workspace symbols, document highlight, folding ranges, selection ranges, organize imports, semantic diagnostics (duplicate declarations, unused imports, missing returns, unreachable code, unresolved types, deprecated usage, access control, missing @Override), source generation (constructors, getters/setters, toString, equals/hashCode, override stubs), completion with auto-import and Javadoc, hover with Javadoc, go-to-definition (cross-file), references, rename, semantic tokens (context-aware), code actions, formatting (via Prettier), signature help, inlay hints, call/type hierarchy, go-to-implementation, type definition, import resolution, type inference, expression type resolution, extract method/constant, inline variable, file watcher, workspace configuration.
+**Done:** Document symbols, workspace symbols, document highlight, folding ranges, selection ranges, organize imports, semantic diagnostics (duplicate declarations, unused imports, missing returns, unreachable code, unresolved types, deprecated usage, access control, missing @Override), source generation (constructors, getters/setters, toString, equals/hashCode, override stubs), completion with auto-import and Javadoc, hover with Javadoc, go-to-definition (cross-file), references, rename, semantic tokens (context-aware), code actions, formatting (via Prettier), signature help, inlay hints, call/type hierarchy, go-to-implementation, type definition, import resolution, type inference, expression type resolution, extract method/constant, inline variable, file watcher, workspace configuration, classpath resolution (Maven/Gradle), Java class file reader, JAR type index, annotation processing (Lombok/Spring), expanded JDK model (238 types), document cache, multi-root workspace, linked editing, document links.
 
-**Remaining gaps:** Full JDK API model (currently ~55 hardcoded types), classpath/dependency resolution (JAR scanning), generics/type parameter inference, annotation processing (Lombok, MapStruct), incremental parsing, multi-root workspace, document links.
+**Remaining gaps:** Generics & overload resolution, source JAR navigation, advanced refactoring (move class, change method signature).
 
 ### Completed Phases
 
@@ -113,5 +121,11 @@ The project has a full parsing pipeline (java-parser → CST → SymbolTable), a
 
 ### Remaining Phases
 
-9. **Classpath & Dependency Resolution** — resolve Maven/Gradle dependencies to local JAR paths, JAR type scanning, source JAR navigation, full JDK API model, annotation processing
-10. **Performance & Polish** — incremental parsing, multi-root workspace, linked editing ranges, document links
+9. ✅ **Classpath & Dependency Resolution** — Maven/Gradle classpath resolution, Java class file reader, expanded JDK model (200+ types), Lombok/Spring annotation processing
+10. ✅ **Performance & Polish** — document cache with debounced reparsing, multi-root workspace, linked editing ranges, document links
+
+### Remaining Gaps (not in any phase)
+
+- Generics & overload resolution (generic type parameters, bounded wildcards)
+- Source JAR navigation (go-to-definition into dependency sources)
+- Advanced refactoring (move class, change method signature)

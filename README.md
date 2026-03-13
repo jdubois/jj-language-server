@@ -47,6 +47,15 @@ Options:
 - **Workspace configuration** — settings for formatter, Java version, classpath hints
 - **Import resolution** — resolves `import` statements, maps unqualified names throughout the file
 - **Type inference** — local variable types, expression types (method calls, field access, literals, operators), type resolver for symbols, members, method return types, field types
+- **Classpath resolution** — resolves Maven dependencies via `~/.m2/repository`, Gradle via `~/.gradle/caches`, detects JDK path and version
+- **Java class file reader** — parses `.class` files from JARs to extract type metadata (classes, methods, fields, access flags) without a JVM
+- **Annotation processing** — Lombok support (`@Data`, `@Getter`, `@Setter`, `@Builder`, `@Value`, `@Slf4j`, `@NoArgsConstructor`, `@AllArgsConstructor`, `@RequiredArgsConstructor`) and Spring annotations (`@Component`, `@Service`, `@RestController`, `@GetMapping`, etc.)
+- **Document links** — clickable URLs in comments and strings
+- **Linked editing ranges** — synchronized editing of all occurrences of an identifier
+- **JAR type index** — builds a searchable type index from resolved dependency JARs (ZIP parsing, class extraction, type search)
+- **Document cache** — version-aware caching with debounced reparsing for performance
+- **Multi-root workspace** — supports multiple workspace folders, each with its own index
+- **Expanded JDK API model** — 238 built-in JDK types covering core packages (java.lang, java.util, java.io, java.nio, java.net, java.time, java.sql, java.math, java.text, java.util.concurrent, java.util.stream, java.util.function, java.util.regex, java.security)
 
 ### 🟡 Partially Implemented
 
@@ -69,9 +78,7 @@ These features work but have some remaining limitations:
 
 - **Generics & overload resolution** — generic type parameters, bounded wildcards, overloaded method selection
 - **Advanced refactoring** — move class, change method signature
-- **Classpath resolution** — dependency JAR analysis, source JAR navigation, full JDK API model
-- **Annotation processing** — Lombok, MapStruct, etc.
-- **Incremental parsing** — currently full reparse on every change
+- **Source JAR navigation** — go-to-definition into dependency source JARs
 
 ### Roadmap
 
@@ -85,7 +92,8 @@ These features work but have some remaining limitations:
 | 6. Type Resolution | Import resolution, local type inference, expression types, type resolver | ✅ Done |
 | 7. Advanced Diagnostics | Deprecated warnings, unresolved methods, access control, missing @Override | ✅ Done |
 | 8. Advanced Refactoring | Extract method, extract constant, inline variable | ✅ Done |
-| 9. Classpath Resolution | Dependency JARs, full JDK model, source navigation | 🔲 Planned |
+| 9. Classpath Resolution | Classpath resolver, class file reader, JDK model, annotation processing | ✅ Done |
+| 10. Performance & Polish | Document cache, multi-root workspace, linked editing, document links | ✅ Done |
 
 ## How It Works
 
@@ -106,7 +114,7 @@ npm run build
 npm test
 ```
 
-There are **280 tests** across 23 test files. Integration tests use the [Spring PetClinic](https://github.com/spring-projects/spring-petclinic) project as a realistic fixture. The pinned commit is tracked in `test-fixtures/spring-petclinic-sha.txt`.
+There are **443 tests** across 31 test files. Integration tests use the [Spring PetClinic](https://github.com/spring-projects/spring-petclinic) project as a realistic fixture. The pinned commit is tracked in `test-fixtures/spring-petclinic-sha.txt`.
 
 ### CI / CD
 
