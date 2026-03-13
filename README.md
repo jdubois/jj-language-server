@@ -43,28 +43,28 @@ Benchmarked against Eclipse JDTLS 1.56 on Spring PetClinic (30 Java files), meas
 
 | Metric | jj (Node.js) | jj (Bun) | Eclipse JDTLS |
 |---|---|---|---|
-| **Startup time** | **~300 ms** | ~500 ms | ~2,200 ms (7×) |
-| **Memory after init** (RSS) | 232 MB | **211 MB** | 2,044 MB |
-| **Memory final** (RSS) | 339 MB | **302 MB** | 2,068 MB |
+| **Startup time** | **~295 ms** | ~2,200 ms | ~2,350 ms (8×) |
+| **Memory after init** (RSS) | 220 MB | **202 MB** | 2,427 MB |
+| **Memory final** (RSS) | 345 MB | **254 MB** | 2,516 MB |
 | **Bulk open** (30 files) | **~1,500 ms** | ~1,500 ms | ~5,000 ms |
 
 ### Operation Latency (avg of 3 runs, largest file)
 
 | Operation | jj (Node.js) | jj (Bun) | Eclipse JDTLS |
 |---|---|---|---|
-| `hover` | 4.6 ms | **1.2 ms** | 2.3 ms |
-| `completion` | **1.3 ms** | 1.6 ms | 32.5 ms |
-| `documentSymbol` | 0.6 ms | **0.3 ms** | 1.4 ms |
-| `definition` | 1.6 ms (∅) | 1.7 ms (∅) | 1.9 ms (∅) |
-| `references` | 10.6 ms | **4.6 ms** | 47.1 ms |
-| `formatting` | **7.7 ms** | 20.5 ms | 8.8 ms |
-| `codeAction` | 1.1 ms | **0.8 ms** | 30 ms (∅) |
-| `foldingRange` | 2.0 ms | 2.4 ms | **1.4 ms** |
-| `semanticTokens` | 6.4 ms | 3.4 ms | **1.3 ms** |
+| `hover` | 3.2 ms | 2.2 ms | **1.9 ms** |
+| `completion` | **1.2 ms** | 3.9 ms | 36.1 ms |
+| `documentSymbol` | **0.6 ms** | 1.3 ms | 1.1 ms |
+| `definition` | 1.5 ms (∅) | 2.1 ms (∅) | 1.5 ms (∅) |
+| `references` | 11 ms | **5.2 ms** | 42.1 ms |
+| `formatting` | 7.5 ms | 24.3 ms | **7 ms** |
+| `codeAction` | **1.3 ms** | **1.3 ms** | 31.6 ms (∅) |
+| `foldingRange` | 1.2 ms | 2.0 ms | **1.1 ms** |
+| `semanticTokens` | 2.9 ms | 3.3 ms | **1.5 ms** |
 
 > (∅) = response was null or empty (not yet supported for cross-file definition)
 
-> **Key takeaway:** jj-language-server is **25× faster** at completion and **10× faster** at references than JDTLS, while using **6× less memory** (~300 MB vs ~2 GB). Bun offers lower memory usage and faster per-operation latency than Node.js. JDTLS excels at semantic tokens and folding ranges thanks to full type resolution. For cold-start scenarios (opening a project for the first time, CI environments, quick edits), jj-language-server is dramatically faster.
+> **Key takeaway:** jj-language-server is **30× faster** at completion and **8× faster** at references than JDTLS, while using **7× less memory** (~345 MB vs ~2.5 GB). Bun offers the lowest memory footprint (254 MB final). JDTLS excels at semantic tokens and folding ranges thanks to full type resolution. For cold-start scenarios (opening a project for the first time, CI environments, quick edits), jj-language-server is dramatically faster.
 
 Run benchmarks locally:
 
@@ -97,7 +97,7 @@ There are **503 tests** across 35 test files. Integration tests use the [Spring 
 
 | Workflow | Trigger | Description |
 |----------|---------|-------------|
-| **CI** (`.github/workflows/ci.yml`) | PR / push to `main` | Lint, build, test (Node 20 & 22) with Spring PetClinic integration |
+| **CI** (`.github/workflows/ci.yml`) | PR / push to `main` | Lint, build, test (Node 22 & 24) with Spring PetClinic integration |
 | **Update Spring PetClinic** (`.github/workflows/update-spring-petclinic.yml`) | Weekly (Monday) / manual | Checks for new PetClinic commits, runs tests, opens a PR |
 | **Dependabot** (`.github/dependabot.yml`) | Weekly (Monday) | Updates npm dependencies and GitHub Action versions |
 
