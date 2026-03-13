@@ -811,7 +811,13 @@ export class LspServer {
             }
 
             const javaHome = this.settings.java.home;
-            const classpath = await resolveProjectClasspath({ mavenDeps, gradleDeps, javaHome });
+            const classpath = await resolveProjectClasspath({
+                mavenDeps,
+                gradleDeps,
+                javaHome,
+                projectRoot: rootPath,
+                logger: this.logger,
+            });
 
             if (classpath.dependencies.length > 0) {
                 await this.jarIndex.indexDependencies(classpath.dependencies);

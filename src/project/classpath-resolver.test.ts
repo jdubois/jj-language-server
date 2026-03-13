@@ -18,6 +18,7 @@ import {
     resolveGradleClasspath,
     resolveJdkPath,
     resolveProjectClasspath,
+    runMavenBuildClasspath,
 } from './classpath-resolver.js';
 import type { MavenDependency } from './maven.js';
 import type { GradleDependency } from './gradle.js';
@@ -339,5 +340,40 @@ describe('classpath-resolver', () => {
             expect(result.jdkPath).toBe(jdkPath);
             expect(result.jdkVersion).toBe('21.0.1');
         });
+    });
+
+    describe('runMavenBuildClasspath (real Maven resolution)', () => {
+        const petclinicDir = join(__dirname, '..', '..', 'test-fixtures', 'spring-petclinic');
+
+        it('resolves Spring PetClinic transitive dependencies via mvn', async () => {
+            const { existsSync: exists } = await import('node:fs');
+            if (!exists(join(petclinicDir, 'pom.xml'))) {
+                return; // skip if PetClinic not cloned
+            }
+
+            const logger = {
+                info: () => {},
+                warn: () => {},
+                error: () => {},
+                log: () => {},
+            };
+
+            const result = await runMavenBuildClasspath(petclinicDir, logger as any);
+
+            // Spring PetClinic has dozens of transitive dependencies
+            expect(result).not.toBeNull();
+            expect(result!.length).toBeGreaterThan(20);
+
+            // Should include Spring Framework core libs
+            const artifactNames = result!.map(d => d.artifactId);
+            expect(artifactNames.some(n => n.includes('spring'))).toBe(true);
+
+            // Every entry should point to a real .jar file
+            for (const dep of result!) {
+                expect(dep.jarPath).toMatch(/\.jar$/);
+                expect(dep.groupId).toBeDefined();
+                expect(dep.version).toBeDefined();
+            }
+        }, 120_000); // generous timeout for Maven
     });
 });

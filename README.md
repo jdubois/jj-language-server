@@ -62,7 +62,7 @@ All features are wired into the LSP server and fully functional:
 - **Code actions** — organize imports, extract variable, extract method, extract constant, inline variable, surround with try-catch, add import for JDK types, move class to package, change method signature
 - **Inlay hints** — parameter name hints on method calls, `var` type inference hints (shows inferred type for `var` declarations)
 - **Call hierarchy** — incoming/outgoing calls, cross-file via workspace index
-- **Classpath resolution** — resolves Maven dependencies via `~/.m2/repository`, Gradle via `~/.gradle/caches`, detects JDK path and version; auto-resolves on workspace init
+- **Classpath resolution** — automatically runs `mvn dependency:build-classpath` or Gradle to resolve all transitive dependencies (including downloads); falls back to scanning `~/.m2/repository` and `~/.gradle/caches` if Maven/Gradle CLI is unavailable; detects JDK path and version
 - **Java class file reader** — parses `.class` files from JARs to extract type metadata (classes, methods, fields, access flags) without a JVM
 - **JAR type index** — builds a searchable type index from resolved dependency JARs (ZIP parsing, class extraction, type search)
 - **Annotation processing** — Lombok support (`@Data`, `@Getter`, `@Setter`, `@Builder`, `@Value`, `@Slf4j`, `@NoArgsConstructor`, `@AllArgsConstructor`, `@RequiredArgsConstructor`) and Spring annotations (`@Component`, `@Service`, `@RestController`, `@GetMapping`, etc.); integrated into symbol table
