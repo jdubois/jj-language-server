@@ -38,7 +38,7 @@
     "@typescript-eslint/eslint-plugin": "^8.57.0",
     "@typescript-eslint/parser": "^8.57.0",
     "commander": "^14.0.0",
-    "eslint": "^9.0.0",
+    "eslint": "^10.0.3",
     "fast-xml-parser": "^5.5.3",
     "java-parser": "^2.3.2",
     "prettier": "^3.8.1",
