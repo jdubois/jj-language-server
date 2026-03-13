@@ -22,32 +22,17 @@ The server communicates over **stdio** using the [Language Server Protocol](http
 
 ## Visual Studio Code
 
-VS Code uses JDTLS by default for Java (via the "Language Support for Java" extension). To use jj-language-server instead, you have two options:
+VS Code uses JDTLS by default for Java (via the "Language Support for Java" extension). To use jj-language-server instead:
 
-### Option A: Using the Generic LSP Client Extension
+### Step 1: Disable JDTLS
 
-1. Install the [vscode-lsp-client](https://marketplace.visualstudio.com/items?itemName=nicolo-ribaudo.vscode-lsp-client) extension (or any generic LSP client extension).
+If you have the "Language Support for Java(TM) by Red Hat" extension installed:
 
-2. Open your VS Code settings (`settings.json`):
-   - **Windows/Linux:** `Ctrl+Shift+P` → "Preferences: Open User Settings (JSON)"
-   - **macOS:** `Cmd+Shift+P` → "Preferences: Open User Settings (JSON)"
+1. Open Extensions sidebar (`Ctrl+Shift+X` / `Cmd+Shift+X`)
+2. Search for "Language Support for Java"
+3. Click **Disable** (you can choose to disable it per workspace)
 
-3. Add the following configuration:
-
-```json
-{
-  "lspClient.serverCommands": {
-    "java": {
-      "command": "jj-language-server",
-      "args": ["--stdio"]
-    }
-  }
-}
-```
-
-### Option B: Using a Custom tasks.json + Launch Configuration
-
-1. Create `.vscode/settings.json` in your workspace:
+Or add to your workspace `.vscode/settings.json`:
 
 ```json
 {
@@ -55,15 +40,39 @@ VS Code uses JDTLS by default for Java (via the "Language Support for Java" exte
 }
 ```
 
-This disables the built-in JDTLS. Then configure jj-language-server via a generic LSP extension as described in Option A.
+### Step 2: Install a Generic LSP Client Extension
 
-### Disabling JDTLS
+Install one of these extensions from the VS Code Marketplace:
 
-If you have the "Language Support for Java(TM) by Red Hat" extension installed and want to use jj-language-server exclusively:
+- **[Generic LSP Client (v2)](https://marketplace.visualstudio.com/items?itemName=zsol.vscode-glspc)** — simple, one server per configuration
+- **[vscode-lsp-generic](https://marketplace.visualstudio.com/items?itemName=maximsmol.vscode-lsp-generic)** — supports multiple servers in settings.json
 
-1. Open Extensions sidebar (`Ctrl+Shift+X` / `Cmd+Shift+X`)
-2. Search for "Language Support for Java"
-3. Click **Disable** (you can choose to disable it per workspace)
+### Step 3: Configure jj-language-server
+
+For **Generic LSP Client (v2)** (`zsol.vscode-glspc`), open settings (`Ctrl+Shift+P` / `Cmd+Shift+P` → "Preferences: Open User Settings (JSON)") and add:
+
+```json
+{
+  "glspc.languageId": "java",
+  "glspc.serverPath": "jj-language-server",
+  "glspc.serverArgs": ["--stdio"]
+}
+```
+
+For **vscode-lsp-generic** (`maximsmol.vscode-lsp-generic`):
+
+```json
+{
+  "lsp-generic.servers": [
+    {
+      "name": "jj-language-server",
+      "command": "jj-language-server",
+      "args": ["--stdio"],
+      "documentSelector": [{ "language": "java" }]
+    }
+  ]
+}
+```
 
 ---
 
