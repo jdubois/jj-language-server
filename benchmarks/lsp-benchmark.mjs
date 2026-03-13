@@ -117,7 +117,18 @@ function launchJJ() {
         stdio: ['pipe', 'pipe', 'pipe'],
         cwd: PETCLINIC,
     });
-    return { proc, client: new LspClient(proc), name: 'jj-language-server' };
+    return { proc, client: new LspClient(proc), name: 'jj (Node.js)' };
+}
+
+function launchJJBun() {
+    // Bun runs TypeScript natively — use the source directly to avoid
+    // CJS/ESM compatibility issues with the rollup bundle.
+    const srcCli = join(ROOT, 'src', 'cli.ts');
+    const proc = spawn('bun', ['run', srcCli, '--stdio'], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: PETCLINIC,
+    });
+    return { proc, client: new LspClient(proc), name: 'jj (Bun)' };
 }
 
 function launchJDTLS() {
@@ -355,7 +366,7 @@ function formatReport(benchmarks) {
     const thin = '─'.repeat(78);
 
     console.log(`\n${sep}`);
-    console.log('  LSP Performance Benchmark: jj-language-server vs Eclipse JDTLS');
+    console.log('  LSP Performance Benchmark: jj (Node.js) vs jj (Bun) vs Eclipse JDTLS');
     console.log('  Corpus: Spring PetClinic • ' + new Date().toISOString().slice(0, 10));
     console.log(sep);
 
@@ -386,43 +397,36 @@ function formatReport(benchmarks) {
     console.log('\n  ⚡  OPERATION LATENCY (avg of 3 runs, largest PetClinic file)\n');
     console.log('  ' + thin);
 
-    const jj = benchmarks.find(b => b.name.includes('jj'));
-    const jdtls = benchmarks.find(b => b.name.includes('JDTLS'));
+    // Build header with all server names
+    const colWidth = 16;
+    let header = '  ' + 'Operation'.padEnd(18);
+    for (const b of benchmarks) {
+        header += b.name.padStart(colWidth);
+    }
+    console.log(header);
+    console.log('  ' + thin);
 
-    if (jj && jdtls) {
-        console.log('  ' + 'Operation'.padEnd(18) + 'jj-lang-server'.padStart(16) + 'Eclipse JDTLS'.padStart(16) + '  Winner');
-        console.log('  ' + thin);
-        const jjOps = Object.fromEntries(jj.results.operations.map(o => [o.label, o]));
-        const jdOps = Object.fromEntries(jdtls.results.operations.map(o => [o.label, o]));
-        const labels = [...new Set([...Object.keys(jjOps), ...Object.keys(jdOps)])];
-        for (const label of labels) {
-            const jjO = jjOps[label];
-            const jdO = jdOps[label];
-            const jjMs = jjO?.avg;
-            const jdMs = jdO?.avg;
-            const jjQ = jjO?.hasContent ? '' : ' (∅)';
-            const jdQ = jdO?.hasContent ? '' : ' (∅)';
-            const jjStr = jjMs != null ? `${jjMs} ms${jjQ}` : 'N/A';
-            const jdStr = jdMs != null ? `${jdMs} ms${jdQ}` : 'N/A';
-            let winner = '';
-            if (jjMs != null && jdMs != null) {
-                // Only compare if both have content
-                if (!jjO?.hasContent && !jdO?.hasContent) winner = '  both empty';
-                else if (!jdO?.hasContent) winner = '  ← (JDTLS empty)';
-                else if (!jjO?.hasContent) winner = '  → (jj empty)';
-                else if (jjMs < jdMs) winner = `  ← ${(jdMs / jjMs).toFixed(1)}x faster`;
-                else if (jdMs < jjMs) winner = `  → ${(jjMs / jdMs).toFixed(1)}x faster`;
-                else winner = '  tie';
+    // Collect all operation labels across benchmarks
+    const allLabels = [...new Set(benchmarks.flatMap(b => b.results.operations.map(o => o.label)))];
+    const opsMap = benchmarks.map(b => Object.fromEntries(b.results.operations.map(o => [o.label, o])));
+
+    for (const label of allLabels) {
+        let line = `  ${label.padEnd(18)}`;
+        const values = opsMap.map(m => m[label]);
+        const validTimes = values.filter(v => v?.hasContent).map(v => v.avg);
+        const fastest = validTimes.length > 0 ? Math.min(...validTimes) : null;
+
+        for (let i = 0; i < benchmarks.length; i++) {
+            const op = values[i];
+            if (!op) { line += 'N/A'.padStart(colWidth); continue; }
+            const q = op.hasContent ? '' : ' (∅)';
+            let cell = `${op.avg} ms${q}`;
+            if (op.hasContent && fastest != null && op.avg === fastest && validTimes.length > 1) {
+                cell = `*${op.avg} ms`;
             }
-            console.log(`  ${label.padEnd(18)} ${jjStr.padStart(16)} ${jdStr.padStart(16)}${winner}`);
+            line += cell.padStart(colWidth);
         }
-    } else {
-        const b = benchmarks[0];
-        console.log('  ' + 'Operation'.padEnd(18) + 'Avg (ms)'.padStart(12) + 'Min'.padStart(10) + 'Max'.padStart(10));
-        console.log('  ' + thin);
-        for (const op of b.results.operations) {
-            console.log(`  ${op.label.padEnd(18)} ${String(op.avg).padStart(12)} ${String(op.min).padStart(10)} ${String(op.max).padStart(10)}`);
-        }
+        console.log(line);
     }
 
     // ── Bulk open ──
@@ -434,11 +438,13 @@ function formatReport(benchmarks) {
 
     console.log('\n' + sep);
     console.log('  Notes:');
-    console.log('  • jj-language-server: Node.js (no JVM), Chevrotain CST parser');
+    console.log('  • jj (Node.js): Node.js runtime, Chevrotain CST parser');
+    console.log('  • jj (Bun): Bun runtime, same Chevrotain CST parser');
     console.log('  • Eclipse JDTLS: JVM + Eclipse JDT compiler, full type resolution');
     console.log('  • JDTLS startup includes JVM bootstrap + workspace indexing');
     console.log('  • Memory = RSS (Resident Set Size) as reported by ps');
     console.log('  • (∅) = response was null or empty array (server not ready / unsupported)');
+    console.log('  • * = fastest for that operation');
     console.log(sep + '\n');
 }
 
@@ -451,17 +457,31 @@ async function main() {
     const args = process.argv.slice(2);
     const jjOnly = args.includes('--jj-only');
     const jdtlsOnly = args.includes('--jdtls-only');
+    const bunOnly = args.includes('--bun-only');
+    const noBun = args.includes('--no-bun');
+    const noJdtls = args.includes('--no-jdtls');
 
     const benchmarks = [];
 
-    if (!jdtlsOnly) {
-        console.log('▶ Benchmarking jj-language-server...');
+    if (!jdtlsOnly && !bunOnly) {
+        console.log('▶ Benchmarking jj-language-server (Node.js)...');
         const result = await benchmarkServer(launchJJ, javaFiles, 1000);
         benchmarks.push(result);
-        console.log(`  ✔ jj-language-server done\n`);
+        console.log(`  ✔ jj (Node.js) done\n`);
     }
 
-    if (!jjOnly) {
+    if (!jdtlsOnly && !jjOnly && !noBun) {
+        console.log('▶ Benchmarking jj-language-server (Bun)...');
+        try {
+            const result = await benchmarkServer(launchJJBun, javaFiles, 1000);
+            benchmarks.push(result);
+            console.log(`  ✔ jj (Bun) done\n`);
+        } catch (err) {
+            console.log(`  ✘ jj (Bun) failed: ${err.message}\n`);
+        }
+    }
+
+    if (!jjOnly && !bunOnly && !noJdtls) {
         console.log('▶ Benchmarking Eclipse JDTLS (slower due to JVM + Maven import)...');
         console.log('  Giving JDTLS 60s warmup for project import...');
         const result = await benchmarkServer(launchJDTLS, javaFiles, 60000);
