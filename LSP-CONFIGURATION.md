@@ -42,33 +42,19 @@ Or add to your workspace `.vscode/settings.json`:
 
 ### Step 2: Install a Generic LSP Client Extension
 
-Install one of these extensions from the VS Code Marketplace:
-
-- **[Generic LSP Client (v2)](https://marketplace.visualstudio.com/items?itemName=zsol.vscode-glspc)** — simple, one server per configuration
-- **[vscode-lsp-generic](https://marketplace.visualstudio.com/items?itemName=maximsmol.vscode-lsp-generic)** — supports multiple servers in settings.json
+VS Code does **not** include a built-in generic LSP client — you need an extension. Install [LSP Config](https://marketplace.visualstudio.com/items?itemName=pepebecker.vscode-lsp-config) from the Marketplace.
 
 ### Step 3: Configure jj-language-server
 
-For **Generic LSP Client (v2)** (`zsol.vscode-glspc`), open settings (`Ctrl+Shift+P` / `Cmd+Shift+P` → "Preferences: Open User Settings (JSON)") and add:
+Open your VS Code settings (`Ctrl+Shift+P` / `Cmd+Shift+P` → "Preferences: Open User Settings (JSON)") and add:
 
 ```json
 {
-  "glspc.languageId": "java",
-  "glspc.serverPath": "jj-language-server",
-  "glspc.serverArgs": ["--stdio"]
-}
-```
-
-For **vscode-lsp-generic** (`maximsmol.vscode-lsp-generic`):
-
-```json
-{
-  "lsp-generic.servers": [
+  "lspConfig.servers": [
     {
-      "name": "jj-language-server",
-      "command": "jj-language-server",
-      "args": ["--stdio"],
-      "documentSelector": [{ "language": "java" }]
+      "language": "java",
+      "cmd": "jj-language-server",
+      "args": ["--stdio"]
     }
   ]
 }
