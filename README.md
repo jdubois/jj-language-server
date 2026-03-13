@@ -1,5 +1,9 @@
 # jj-language-server
 
+[![npm version](https://img.shields.io/npm/v/jj-language-server)](https://www.npmjs.com/package/jj-language-server)
+[![CI](https://github.com/jdubois/jj-language-server/actions/workflows/ci.yml/badge.svg)](https://github.com/jdubois/jj-language-server/actions/workflows/ci.yml)
+[![License](https://img.shields.io/npm/l/jj-language-server)](LICENSE)
+
 > [!WARNING]
 > **Experimental project** — Developed by [Julien Dubois](https://github.com/jdubois). This software is provided "as is", without warranty of any kind, express or implied. See the [Apache-2.0 License](LICENSE) for details.
 
