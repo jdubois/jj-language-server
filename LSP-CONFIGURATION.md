@@ -32,9 +32,9 @@ If you have the "Language Support for Java(TM) by Red Hat" extension installed, 
 2. Search for "Language Support for Java"
 3. Click the gear icon → **Disable** (choose "Disable (Workspace)" to only affect the current project)
 
-### Step 2: Install a Generic LSP Client Extension
+### Step 2: Install the Generic LSP Client Extension
 
-VS Code does **not** include a built-in generic LSP client — you need an extension. Install [LSP Config](https://marketplace.visualstudio.com/items?itemName=pepebecker.vscode-lsp-config) from the Marketplace.
+VS Code does **not** include a built-in generic LSP client — you need an extension. Install [Generic LSP Client (v2)](https://marketplace.visualstudio.com/items?itemName=zsol.vscode-glspc) from the Marketplace.
 
 ### Step 3: Configure jj-language-server
 
@@ -42,15 +42,13 @@ Open your VS Code settings (`Ctrl+Shift+P` / `Cmd+Shift+P` → "Preferences: Ope
 
 ```json
 {
-  "lspConfig.servers": [
-    {
-      "language": "java",
-      "cmd": "jj-language-server",
-      "args": "--stdio"
-    }
-  ]
+  "glspc.server.command": "jj-language-server",
+  "glspc.server.commandArguments": ["--stdio"],
+  "glspc.server.languageId": ["java"]
 }
 ```
+
+> **Troubleshooting:** Check the output panel (`View` → `Output`) and select "Generic LSP Client" from the dropdown to see server logs. If you get `ENOENT`, use the full path from `which jj-language-server`.
 
 ---
 
