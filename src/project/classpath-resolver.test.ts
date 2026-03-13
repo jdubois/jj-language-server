@@ -19,6 +19,7 @@ import {
     resolveJdkPath,
     resolveProjectClasspath,
     runMavenBuildClasspath,
+    runGradleDependencyClasspath,
 } from './classpath-resolver.js';
 import type { MavenDependency } from './maven.js';
 import type { GradleDependency } from './gradle.js';
@@ -375,5 +376,46 @@ describe('classpath-resolver', () => {
                 expect(dep.version).toBeDefined();
             }
         }, 120_000); // generous timeout for Maven
+    });
+
+    describe('runGradleDependencyClasspath (real Gradle resolution)', () => {
+        const petclinicDir = join(__dirname, '..', '..', 'test-fixtures', 'spring-petclinic');
+
+        it('resolves Spring PetClinic transitive dependencies via Gradle', async () => {
+            const { existsSync: exists } = await import('node:fs');
+            if (!exists(join(petclinicDir, 'build.gradle'))) {
+                return; // skip if PetClinic not cloned
+            }
+
+            const logger = {
+                info: () => {},
+                warn: () => {},
+                error: () => {},
+                log: () => {},
+            };
+
+            const result = await runGradleDependencyClasspath(petclinicDir, logger as any);
+
+            // Spring PetClinic has many transitive dependencies via Spring Boot BOM
+            expect(result).not.toBeNull();
+            expect(result!.length).toBeGreaterThan(20);
+
+            // Should include Spring Framework JARs
+            const artifactNames = result!.map(d => d.artifactId);
+            expect(artifactNames.some(n => n.includes('spring'))).toBe(true);
+
+            // Every entry should be a real .jar path with valid metadata
+            for (const dep of result!) {
+                expect(dep.jarPath).toMatch(/\.jar$/);
+                expect(dep.groupId).toBeDefined();
+                expect(dep.version).toBeDefined();
+            }
+
+            // Should resolve BOM-managed versions (no version in build.gradle)
+            // e.g. spring-boot-starter-data-jpa has no explicit version
+            const jpaStarter = result!.find(d => d.artifactId.includes('spring-boot'));
+            expect(jpaStarter).toBeDefined();
+            expect(jpaStarter!.version).not.toBe('unknown');
+        }, 180_000); // Gradle first run can be slow (downloading wrapper + deps)
     });
 });

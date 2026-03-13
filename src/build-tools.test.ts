@@ -165,6 +165,104 @@ targetCompatibility = '17'`;
         expect(result.sourceCompatibility).toBe('17');
         expect(result.targetCompatibility).toBe('17');
     });
+
+    it('extracts dependencies without version (BOM-managed)', () => {
+        const content = `
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    runtimeOnly 'com.h2database:h2'
+}`;
+        const result = parseGradleContent(content, '/fake/build.gradle', noopLogger)!;
+        expect(result.dependencies.length).toBe(2);
+        expect(result.dependencies[0].group).toBe('org.springframework.boot');
+        expect(result.dependencies[0].name).toBe('spring-boot-starter-web');
+        expect(result.dependencies[0].version).toBeUndefined();
+        expect(result.dependencies[1].configuration).toBe('runtimeOnly');
+    });
+
+    it('extracts map-style dependencies (Groovy DSL)', () => {
+        const content = `
+dependencies {
+    implementation group: 'org.apache.commons', name: 'commons-lang3', version: '3.14.0'
+}`;
+        const result = parseGradleContent(content, '/fake/build.gradle', noopLogger)!;
+        expect(result.dependencies.length).toBe(1);
+        expect(result.dependencies[0].group).toBe('org.apache.commons');
+        expect(result.dependencies[0].name).toBe('commons-lang3');
+        expect(result.dependencies[0].version).toBe('3.14.0');
+    });
+
+    it('extracts map-style dependencies (Kotlin DSL)', () => {
+        const content = `
+dependencies {
+    implementation(group = "org.apache.commons", name = "commons-lang3", version = "3.14.0")
+}`;
+        const result = parseGradleContent(content, '/fake/build.gradle.kts', noopLogger)!;
+        expect(result.isKotlinDsl).toBe(true);
+        expect(result.dependencies.length).toBe(1);
+        expect(result.dependencies[0].group).toBe('org.apache.commons');
+        expect(result.dependencies[0].name).toBe('commons-lang3');
+        expect(result.dependencies[0].version).toBe('3.14.0');
+    });
+
+    it('extracts all dependency configurations', () => {
+        const content = `
+dependencies {
+    api 'group:api-lib:1.0'
+    compileOnly 'group:compile-only-lib:1.0'
+    runtimeOnly 'group:runtime-lib:1.0'
+    annotationProcessor 'group:annotation-proc:1.0'
+    testCompileOnly 'group:test-compile:1.0'
+    testRuntimeOnly 'group:test-runtime:1.0'
+}`;
+        const result = parseGradleContent(content, '/fake/build.gradle', noopLogger)!;
+        const configs = result.dependencies.map(d => d.configuration);
+        expect(configs).toContain('api');
+        expect(configs).toContain('compileOnly');
+        expect(configs).toContain('runtimeOnly');
+        expect(configs).toContain('annotationProcessor');
+        expect(configs).toContain('testCompileOnly');
+        expect(configs).toContain('testRuntimeOnly');
+    });
+
+    it('extracts plugins with apply plugin syntax', () => {
+        const content = `
+apply plugin: 'java'
+apply plugin: 'war'
+plugins {
+    id 'org.springframework.boot' version '3.2.0'
+}`;
+        const result = parseGradleContent(content, '/fake/build.gradle', noopLogger)!;
+        expect(result.plugins).toContain('java');
+        expect(result.plugins).toContain('war');
+        expect(result.plugins).toContain('org.springframework.boot');
+    });
+
+    it('extracts Java version from JavaVersion enum', () => {
+        const content = `
+sourceCompatibility = JavaVersion.VERSION_17`;
+        const result = parseGradleContent(content, '/fake/build.gradle', noopLogger)!;
+        expect(result.javaVersion).toBe('17');
+    });
+
+    it('parses real Spring PetClinic build.gradle', async () => {
+        const { existsSync, readFileSync } = await import('node:fs');
+        const { join } = await import('node:path');
+        const buildFile = join(__dirname, '..', 'test-fixtures', 'spring-petclinic', 'build.gradle');
+        if (!existsSync(buildFile)) return; // skip if fixture not available
+
+        const content = readFileSync(buildFile, 'utf-8');
+        const result = parseGradleContent(content, buildFile, noopLogger)!;
+
+        expect(result).not.toBeNull();
+        expect(result.javaVersion).toBe('17');
+        expect(result.plugins).toContain('java');
+        expect(result.plugins).toContain('org.springframework.boot');
+        // PetClinic has at least 10 dependencies
+        expect(result.dependencies.length).toBeGreaterThanOrEqual(10);
+        // Should find spring-boot-starter-data-jpa
+        expect(result.dependencies.some(d => d.name === 'spring-boot-starter-data-jpa')).toBe(true);
+    });
 });
 
 describe('JDK model', () => {

@@ -7,7 +7,7 @@
  */
 
 import { stat, readdir, readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join, delimiter, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { execFile } from 'node:child_process';
@@ -499,41 +499,85 @@ export async function runGradleDependencyClasspath(
     const gradleCmd = existsSync(gradlew) ? gradlew : 'gradle';
 
     try {
-        // Use a custom Gradle init script to print the classpath
         const { mkdtemp, writeFile, readFile: rf, rm } = await import('node:fs/promises');
         const { tmpdir } = await import('node:os');
 
         const tmpDir = await mkdtemp(join(tmpdir(), 'jj-gradle-'));
         const cpFile = join(tmpDir, 'classpath.txt');
-        const initScript = join(tmpDir, 'print-classpath.gradle');
 
+        // Strategy 1: Use a custom init script with lenient configuration
+        // Override the Java toolchain to use whatever JDK is available,
+        // then resolve the compileClasspath.
+        const initScript = join(tmpDir, 'print-classpath.gradle');
         await writeFile(initScript, `
-allprojects {
-    task jjPrintClasspath {
-        doLast {
-            def cp = []
+settingsEvaluated { settings ->
+    settings.gradle.allprojects { proj ->
+        proj.afterEvaluate {
+            // Relax toolchain requirement to use whatever JDK is available
             try {
-                cp = configurations.compileClasspath.resolve()
+                proj.java {
+                    toolchain {
+                        languageVersion = JavaLanguageVersion.of(JavaVersion.current().majorVersion)
+                    }
+                }
             } catch (Exception e) {
-                try { cp = configurations.compile.resolve() } catch (Exception e2) {}
+                // not a java project or no java extension, skip
             }
-            new File("${cpFile.replace(/\\/g, '\\\\')}").text = cp.join(System.getProperty("path.separator"))
+            // Register our classpath-printing task
+            proj.tasks.register('jjPrintClasspath') {
+                doLast {
+                    def cp = []
+                    def configs = ['compileClasspath', 'runtimeClasspath', 'compile']
+                    for (cfgName in configs) {
+                        try {
+                            def cfg = proj.configurations.findByName(cfgName)
+                            if (cfg != null && cfg.canBeResolved) {
+                                cp = cfg.resolve()
+                                break
+                            }
+                        } catch (Exception e) {
+                            // try next configuration
+                        }
+                    }
+                    def f = new File("${cpFile.replace(/\\/g, '\\\\')}")
+                    def existing = f.exists() ? f.text : ''
+                    def newCp = existing ? existing + System.getProperty("path.separator") + cp.join(System.getProperty("path.separator")) : cp.join(System.getProperty("path.separator"))
+                    f.text = newCp
+                }
+            }
         }
     }
 }
 `);
 
-        await execFileAsync(
-            gradleCmd,
-            ['--init-script', initScript, 'jjPrintClasspath', '--quiet', '--no-daemon'],
-            {
-                cwd: projectRoot,
-                timeout: 120_000,
-                maxBuffer: 10 * 1024 * 1024,
-            },
-        );
+        try {
+            await execFileAsync(
+                gradleCmd,
+                ['--init-script', initScript, 'jjPrintClasspath', '--quiet', '--no-daemon'],
+                {
+                    cwd: projectRoot,
+                    timeout: 180_000,
+                    maxBuffer: 10 * 1024 * 1024,
+                },
+            );
+        } catch {
+            // Strategy 2: Parse `gradle dependencies` output to find JAR coordinates,
+            // then look them up in the Gradle cache
+            logger?.info('Gradle init script failed, trying gradle dependencies output parsing');
+            const depResult = await parseGradleDependenciesOutput(projectRoot, gradleCmd, logger);
+            try { await rm(tmpDir, { recursive: true }); } catch { /* ignore */ }
+            return depResult;
+        }
 
-        const content = await rf(cpFile, 'utf-8');
+        let content: string;
+        try {
+            content = await rf(cpFile, 'utf-8');
+        } catch {
+            // cpFile was never written — init script task didn't run
+            try { await rm(tmpDir, { recursive: true }); } catch { /* ignore */ }
+            return null;
+        }
+
         const deps: ResolvedDependency[] = [];
         const seen = new Set<string>();
 
@@ -561,4 +605,135 @@ allprojects {
         logger?.info(`Gradle classpath resolution failed: ${err.message?.slice(0, 200)}`);
         return null;
     }
+}
+
+/**
+ * Fallback: Run `gradle dependencies --configuration compileClasspath` and parse the
+ * text output to extract dependency coordinates, then locate JARs in the Gradle cache.
+ *
+ * This approach works even when the init script fails (e.g. toolchain version mismatch).
+ */
+async function parseGradleDependenciesOutput(
+    projectRoot: string,
+    gradleCmd: string,
+    logger?: Logger,
+): Promise<ResolvedDependency[] | null> {
+    // Write a minimal init script to relax toolchain requirements
+    const { mkdtemp, writeFile: wf, rm: rmDir } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const tmpDir = await mkdtemp(join(tmpdir(), 'jj-gradle-deps-'));
+    const relaxScript = join(tmpDir, 'relax-toolchain.gradle');
+    await wf(relaxScript, `
+settingsEvaluated { settings ->
+    settings.gradle.allprojects { proj ->
+        proj.afterEvaluate {
+            try {
+                proj.java {
+                    toolchain {
+                        languageVersion = JavaLanguageVersion.of(JavaVersion.current().majorVersion)
+                    }
+                }
+            } catch (Exception e) {}
+        }
+    }
+}
+`);
+
+    try {
+        const { stdout } = await execFileAsync(
+            gradleCmd,
+            ['--init-script', relaxScript, 'dependencies', '--configuration', 'compileClasspath', '--no-daemon', '--quiet'],
+            {
+                cwd: projectRoot,
+                timeout: 120_000,
+                maxBuffer: 10 * 1024 * 1024,
+            },
+        );
+
+        return parseGradleDepTreeOutput(stdout, logger);
+    } catch {
+        // Try without specifying a configuration
+        try {
+            const { stdout } = await execFileAsync(
+                gradleCmd,
+                ['--init-script', relaxScript, 'dependencies', '--no-daemon', '--quiet'],
+                {
+                    cwd: projectRoot,
+                    timeout: 120_000,
+                    maxBuffer: 10 * 1024 * 1024,
+                },
+            );
+
+            return parseGradleDepTreeOutput(stdout, logger);
+        } catch (err: any) {
+            logger?.info(`Gradle dependencies output also failed: ${err.message?.slice(0, 200)}`);
+            return null;
+        }
+    } finally {
+        try { await rmDir(tmpDir, { recursive: true }); } catch { /* ignore */ }
+    }
+}
+
+/**
+ * Parse Gradle `dependencies` command output. Each dependency line looks like:
+ *   +--- org.springframework.boot:spring-boot-starter-web -> 3.2.0
+ *   |    +--- org.springframework:spring-core:6.1.1
+ *   \--- com.fasterxml.jackson.core:jackson-databind:2.16.0 (*)
+ */
+function parseGradleDepTreeOutput(
+    stdout: string,
+    logger?: Logger,
+): ResolvedDependency[] | null {
+    const deps: ResolvedDependency[] = [];
+    const seen = new Set<string>();
+    const gradleHome = join(homedir(), '.gradle');
+
+    // Match lines like: +--- group:name:version or \--- group:name:version -> resolvedVersion
+    const depLineRegex = /[+\\|]\-\-\-\s+(\S+):(\S+):(\S+?)(?:\s+->\s+(\S+))?(?:\s+\([\w*]+\))?$/;
+
+    for (const line of stdout.split('\n')) {
+        const match = line.match(depLineRegex);
+        if (!match) continue;
+
+        const group = match[1];
+        const name = match[2];
+        const version = match[4] ?? match[3]; // prefer resolved version
+        const key = `${group}:${name}:${version}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        // Try to find the JAR in Gradle cache
+        const cacheDir = join(gradleHome, 'caches', 'modules-2', 'files-2.1', group, name, version);
+        let jarPath: string | undefined;
+        let sourceJarPath: string | undefined;
+
+        try {
+            for (const hashDir of readdirSync(cacheDir)) {
+                const hashPath = join(cacheDir, hashDir);
+                try {
+                    for (const file of readdirSync(hashPath)) {
+                        if (file === `${name}-${version}.jar`) {
+                            jarPath = join(hashPath, file);
+                        } else if (file === `${name}-${version}-sources.jar`) {
+                            sourceJarPath = join(hashPath, file);
+                        }
+                    }
+                } catch { /* hash dir might not be readable */ }
+            }
+        } catch { /* cache dir doesn't exist = dependency not downloaded */ }
+
+        if (jarPath) {
+            deps.push({
+                groupId: group,
+                artifactId: name,
+                version,
+                jarPath,
+                sourceJarPath,
+                scope: 'compile',
+            });
+        }
+    }
+
+    logger?.info(`Parsed ${deps.length} dependencies from Gradle dependency tree`);
+    return deps.length > 0 ? deps : null;
 }

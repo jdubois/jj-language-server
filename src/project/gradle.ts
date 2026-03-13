@@ -98,9 +98,14 @@ function extractGradleDependencies(content: string): GradleDependency[] {
 
     // Match: implementation 'group:name:version'
     // Match: implementation "group:name:version"
-    const stringDepRegex = /\b(implementation|api|compileOnly|runtimeOnly|testImplementation|testCompileOnly|testRuntimeOnly|annotationProcessor)\s*[\(]?\s*['"]([^'"]+)['"]\s*[\)]?/g;
+    // Supports all standard and custom configurations (any word before a string with ':')
+    // The quoted string must contain ':' (group:artifact format) and no commas (to avoid matching map-style deps)
+    const stringDepRegex = /\b(implementation|api|compileOnly|runtimeOnly|testImplementation|testCompileOnly|testRuntimeOnly|annotationProcessor|developmentOnly|checkstyle|[a-zA-Z]+)\s*[\(]?\s*['"]([^'",]*:[^'",]+)['"]\s*[\)]?/g;
     let match;
     while ((match = stringDepRegex.exec(content)) !== null) {
+        // Skip false positives: lines that are clearly not dependencies
+        const config = match[1];
+        if (['plugins', 'id', 'apply', 'task', 'project', 'file', 'files', 'group', 'version', 'description'].includes(config)) continue;
         const parts = match[2].split(':');
         if (parts.length >= 2) {
             deps.push({
@@ -112,8 +117,9 @@ function extractGradleDependencies(content: string): GradleDependency[] {
         }
     }
 
-    // Match: implementation(group = "...", name = "...", version = "...")
-    const mapDepRegex = /\b(implementation|api|compileOnly|runtimeOnly|testImplementation|testCompileOnly|testRuntimeOnly|annotationProcessor)\s*\(\s*group\s*[:=]\s*['"]([^'"]+)['"]\s*,\s*name\s*[:=]\s*['"]([^'"]+)['"]\s*(?:,\s*version\s*[:=]\s*['"]([^'"]+)['"])?\s*\)/g;
+    // Match: implementation(group = "...", name = "...", version = "...") — Kotlin DSL
+    // Match: implementation group: '...', name: '...', version: '...'   — Groovy DSL
+    const mapDepRegex = /\b(implementation|api|compileOnly|runtimeOnly|testImplementation|testCompileOnly|testRuntimeOnly|annotationProcessor|developmentOnly|checkstyle|[a-zA-Z]+)\s*\(?\s*group\s*[:=]\s*['"]([^'"]+)['"]\s*,\s*name\s*[:=]\s*['"]([^'"]+)['"]\s*(?:,\s*version\s*[:=]\s*['"]([^'"]+)['"])?\s*\)?/g;
     while ((match = mapDepRegex.exec(content)) !== null) {
         deps.push({
             configuration: match[1],
