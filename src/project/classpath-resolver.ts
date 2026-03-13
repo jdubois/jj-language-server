@@ -359,7 +359,7 @@ export async function runMavenBuildClasspath(
             mvnCmd,
             [
                 'dependency:build-classpath',
-                '-DincludeScope=compile',
+                '-DincludeScope=runtime',   // runtime includes compile + runtime deps
                 '-Dmdep.outputFile=/dev/stdout',
                 '-q',       // quiet mode — only the classpath
                 '--batch-mode',
@@ -400,7 +400,7 @@ async function runMavenBuildClasspathViaFile(
             mvnCmd,
             [
                 'dependency:build-classpath',
-                '-DincludeScope=compile',
+                '-DincludeScope=runtime',
                 `-Dmdep.outputFile=${cpFile}`,
                 '--batch-mode',
                 '--no-transfer-progress',

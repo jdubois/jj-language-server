@@ -22,6 +22,8 @@ export interface MavenProject {
     dependencies: MavenDependency[];
     modules: string[];
     parentPomPath?: string;
+    managedDependencies: MavenDependency[];
+    repositories: MavenRepository[];
 }
 
 export interface MavenDependency {
@@ -32,11 +34,17 @@ export interface MavenDependency {
     optional?: boolean;
 }
 
+export interface MavenRepository {
+    id: string;
+    url: string;
+    name?: string;
+}
+
 const xmlParser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: '@_',
     textNodeName: '#text',
-    isArray: (name) => name === 'dependency' || name === 'module' || name === 'plugin',
+    isArray: (name) => name === 'dependency' || name === 'module' || name === 'plugin' || name === 'repository',
 });
 
 /**
@@ -92,6 +100,54 @@ export function parsePomContent(content: string, pomPath: string, logger: Logger
             }
         }
 
+        // Dependency management (BOMs and managed versions)
+        const managedDeps: MavenDependency[] = [];
+        const mgmtSection = project.dependencyManagement?.dependencies?.dependency;
+        if (Array.isArray(mgmtSection)) {
+            for (const d of mgmtSection) {
+                managedDeps.push({
+                    groupId: resolveProperty(d.groupId, project) ?? 'unknown',
+                    artifactId: resolveProperty(d.artifactId, project) ?? 'unknown',
+                    version: resolveProperty(d.version, project),
+                    scope: d.scope,
+                    optional: d.optional === 'true' || d.optional === true,
+                });
+            }
+        }
+
+        // Apply managed versions to dependencies that lack an explicit version
+        for (const dep of deps) {
+            if (!dep.version) {
+                const managed = managedDeps.find(
+                    m => m.groupId === dep.groupId && m.artifactId === dep.artifactId,
+                );
+                if (managed?.version) {
+                    dep.version = managed.version;
+                }
+            }
+        }
+
+        // Repositories
+        const repositories: MavenRepository[] = [];
+        const repoSection = project.repositories?.repository;
+        if (Array.isArray(repoSection)) {
+            for (const r of repoSection) {
+                if (r.id && r.url) {
+                    repositories.push({
+                        id: String(r.id),
+                        url: resolveProperty(String(r.url), project) ?? String(r.url),
+                        name: r.name ? String(r.name) : undefined,
+                    });
+                }
+            }
+        } else if (repoSection?.id && repoSection?.url) {
+            repositories.push({
+                id: String(repoSection.id),
+                url: resolveProperty(String(repoSection.url), project) ?? String(repoSection.url),
+                name: repoSection.name ? String(repoSection.name) : undefined,
+            });
+        }
+
         // Modules (multi-module project)
         const modules: string[] = [];
         const moduleSection = project.modules?.module;
@@ -111,6 +167,8 @@ export function parsePomContent(content: string, pomPath: string, logger: Logger
             testSourceDirectory,
             dependencies: deps,
             modules,
+            managedDependencies: managedDeps,
+            repositories,
         };
     } catch (e) {
         logger.warn(`Failed to parse pom.xml at ${pomPath}: ${e}`);

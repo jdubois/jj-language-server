@@ -100,6 +100,92 @@ describe('Maven pom.xml parsing', () => {
         expect(result.groupId).toBe('com.example');
         expect(result.version).toBe('1.0.0');
     });
+
+    it('extracts dependencyManagement and applies managed versions', () => {
+        const pom = `<?xml version="1.0" encoding="UTF-8"?>
+<project>
+    <groupId>com.example</groupId>
+    <artifactId>my-app</artifactId>
+    <version>1.0.0</version>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-core</artifactId>
+                <version>6.1.0</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-context</artifactId>
+                <version>6.1.0</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+    </dependencies>
+</project>`;
+        const result = parsePomContent(pom, '/fake/pom.xml', noopLogger)!;
+        expect(result.managedDependencies.length).toBe(2);
+        expect(result.managedDependencies[0].version).toBe('6.1.0');
+        // Dependencies should inherit versions from dependencyManagement
+        expect(result.dependencies[0].version).toBe('6.1.0');
+        expect(result.dependencies[1].version).toBe('6.1.0');
+    });
+
+    it('extracts repositories', () => {
+        const pom = `<?xml version="1.0" encoding="UTF-8"?>
+<project>
+    <groupId>com.example</groupId>
+    <artifactId>my-app</artifactId>
+    <version>1.0.0</version>
+    <repositories>
+        <repository>
+            <id>company-nexus</id>
+            <name>Company Nexus</name>
+            <url>https://nexus.company.com/repository/maven-releases/</url>
+        </repository>
+        <repository>
+            <id>spring-milestones</id>
+            <url>https://repo.spring.io/milestone</url>
+        </repository>
+    </repositories>
+</project>`;
+        const result = parsePomContent(pom, '/fake/pom.xml', noopLogger)!;
+        expect(result.repositories.length).toBe(2);
+        expect(result.repositories[0].id).toBe('company-nexus');
+        expect(result.repositories[0].url).toBe('https://nexus.company.com/repository/maven-releases/');
+        expect(result.repositories[0].name).toBe('Company Nexus');
+        expect(result.repositories[1].id).toBe('spring-milestones');
+    });
+
+    it('resolves property references in dependency versions', () => {
+        const pom = `<?xml version="1.0" encoding="UTF-8"?>
+<project>
+    <groupId>com.example</groupId>
+    <artifactId>my-app</artifactId>
+    <version>1.0.0</version>
+    <properties>
+        <spring.version>6.1.0</spring.version>
+    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-core</artifactId>
+            <version>\${spring.version}</version>
+        </dependency>
+    </dependencies>
+</project>`;
+        const result = parsePomContent(pom, '/fake/pom.xml', noopLogger)!;
+        expect(result.dependencies[0].version).toBe('6.1.0');
+    });
 });
 
 describe('Gradle build parsing', () => {
