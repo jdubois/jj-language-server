@@ -69,7 +69,7 @@ jobs:
 
       - name: Create pull request
         if: steps.check.outputs.needed == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           commit-message: "chore: update Spring PetClinic to ${{ steps.latest.outputs.sha }}"
           title: "chore: update Spring PetClinic test fixture"
