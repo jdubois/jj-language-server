@@ -46,7 +46,7 @@ Open your VS Code settings (`Ctrl+Shift+P` / `Cmd+Shift+P` → "Preferences: Ope
     {
       "language": "java",
       "cmd": "jj-language-server",
-      "args": ["--stdio"]
+      "args": "--stdio"
     }
   ]
 }
