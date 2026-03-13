@@ -245,7 +245,11 @@ jj-language-server --stdio --log-level 4
 
 1. Verify the installation: `jj-language-server --version`
 2. Check that Node.js ≥ 22 is installed: `node --version`
-3. Try running manually: `jj-language-server --stdio --log-level 4`
+3. Test the server responds to LSP initialization:
+   ```bash
+   { printf 'Content-Length: 107\r\n\r\n{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":null,"capabilities":{}}}'; sleep 2; } | jj-language-server --stdio
+   ```
+   You should see a JSON response containing `"capabilities"`. If you get no output, check your Node.js version and PATH.
 
 ### No Completions or Diagnostics
 
