@@ -26,19 +26,11 @@ VS Code uses JDTLS by default for Java (via the "Language Support for Java" exte
 
 ### Step 1: Disable JDTLS
 
-If you have the "Language Support for Java(TM) by Red Hat" extension installed:
+If you have the "Language Support for Java(TM) by Red Hat" extension installed, disable it to avoid conflicts:
 
 1. Open Extensions sidebar (`Ctrl+Shift+X` / `Cmd+Shift+X`)
 2. Search for "Language Support for Java"
-3. Click **Disable** (you can choose to disable it per workspace)
-
-Or add to your workspace `.vscode/settings.json`:
-
-```json
-{
-  "java.server.launchMode": "Disabled"
-}
-```
+3. Click the gear icon → **Disable** (choose "Disable (Workspace)" to only affect the current project)
 
 ### Step 2: Install a Generic LSP Client Extension
 
